@@ -1,0 +1,19 @@
+# segredos — a chave da carteira dela mora aqui e NUNCA vai pro git
+.env
+.env.*
+!.env.example
+
+# estado vivo: carteira, posicoes, licoes, checkpoint.
+# No Railway isto mora num VOLUME, nao no repo — senao um deploy apaga a
+# memoria dela e ela acorda sem saber o que fez ontem.
+src/data/*.json
+!src/data/.gitkeep
+
+# perfis do navegador e sessoes
+src/data/profiles/
+node_modules/
+npm-debug.log*
+
+# a materia-prima da arte (1,2 GB) fica de fora: o yuna-live.html ja leva
+# cenario, sprites e gato embutidos em 3 MB.
+public/assets/

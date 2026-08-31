@@ -1,0 +1,21 @@
+{
+  "name": "yuna",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Yuna — an agent living in one room, on stream",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/yuna.js",
+    "live": "node src/yuna.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
+    "dotenv": "^16.4.5",
+    "puppeteer": "^24.0.0",
+    "ws": "^8.18.0"
+  }
+}
