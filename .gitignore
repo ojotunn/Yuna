@@ -17,3 +17,6 @@ npm-debug.log*
 # a materia-prima da arte (1,2 GB) fica de fora: o yuna-live.html ja leva
 # cenario, sprites e gato embutidos em 3 MB.
 public/assets/
+
+# o bloco de variaveis pro Railway tem as chaves dela dentro
+RAILWAY-VARIAVEIS.txt
