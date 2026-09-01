@@ -216,7 +216,7 @@ export async function decide({ model, effort, system, situation, maxTokens = 400
 
   if (res.stop_reason === "refusal") {
     return {
-      journal: "(recusei responder a este contexto)",
+      journal: "(I declined to answer this one)",
       aside: "",
       action: { type: "rest", reason: "refusal" },
       cost,
@@ -232,7 +232,7 @@ export async function decide({ model, effort, system, situation, maxTokens = 400
     // Saida truncada (max_tokens) — trata como turno perdido, mas o aluguel
     // ja foi gasto e tem que ser cobrado assim mesmo.
     return {
-      journal: "(minha resposta foi cortada antes de terminar)",
+      journal: "(my answer got cut off before I finished)",
       aside: "",
       action: { type: "rest", reason: "truncated" },
       cost,

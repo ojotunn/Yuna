@@ -309,19 +309,24 @@ const servidor = http.createServer(async (req, res) => {
     const tok = req.headers["x-admin-token"];
     if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
       return enviar(res, 401, { erro: "token invalido" });
+    /* GRAVA NO VOLUME, nao num .env. (01/09/2026)
+       Antes escrevia em /app/.env.yuna: arquivo que NAO existe no Railway (o
+       .gitignore o exclui), entao a rota devolvia 500 e nada era marcado. E se
+       existisse seria pior — /app nao e o volume, e o restart que a propria
+       resposta mandava dar apagaria a marca. Aqui sobrevive a deploy, e o
+       motor le a cada ciclo: nao precisa mais reiniciar. */
     const quando = new Date().toISOString();
+    const arq = process.env.LANCAMENTO_FILE || path.join(ROOT, "src", "data", "lancamento.json");
     try {
-      let txt = fs.readFileSync(ENV_SHOW, "utf8");
-      txt = txt.split(/\r?\n/).filter((l) => !/^\s*SHOW_START\s*=/.test(l)).join("\n");
-      txt += "\n# O LANCAMENTO: a jornada dela conta a partir daqui.\n" +
-             "SHOW_START=" + quando + "\n";
-      fs.writeFileSync(ENV_SHOW, txt);
+      fs.mkdirSync(path.dirname(arq), { recursive: true });
+      fs.writeFileSync(arq, JSON.stringify({ showStart: quando }, null, 2));
     } catch (e) {
-      return enviar(res, 500, { erro: String(e.message).slice(0, 120) });
+      return enviar(res, 500, { erro: String(e.message).slice(0, 160) });
     }
+    console.log(`[lancamento] a jornada dela comeca em ${quando}`);
     return enviar(res, 200, {
       ok: true, showStart: quando,
-      proximo: "reinicie o servidor pra valer: a marca e lida no boot",
+      proximo: "ja vale — o motor pega no proximo ciclo, sem reiniciar",
     });
   }
 
@@ -355,9 +360,30 @@ const servidor = http.createServer(async (req, res) => {
     }
   }
 
-  if (url.pathname === "/api/ligar" && req.method === "POST") return enviar(res, 200, ligar());
-  if (url.pathname === "/api/desligar" && req.method === "POST") return enviar(res, 200, desligar());
-  if (url.pathname === "/api/log") return enviar(res, 200, { log: log.slice(-120) });
+  /* ESTAS TRES ESTAVAM ABERTAS. (01/09/2026)
+     `curl -X POST https://yuna.cam/api/desligar` de qualquer pessoa que
+     descobrisse o dominio matava a live — e como nada supervisiona o motor, ele
+     nao voltaria sozinho: a tela congelaria no ultimo retrato dela e pareceria
+     uma cena parada, nao um show derrubado. O /api/log ainda entregava o log
+     interno de graca. */
+  if (url.pathname === "/api/ligar" && req.method === "POST") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    return enviar(res, 200, ligar());
+  }
+  if (url.pathname === "/api/desligar" && req.method === "POST") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    return enviar(res, 200, desligar());
+  }
+  if (url.pathname === "/api/log") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    return enviar(res, 200, { log: log.slice(-120) });
+  }
 
   /* O EDITOR DA TELA. O Michel marca na mao onde e de que tamanho o quarto
      fica na live — eu parei de adivinhar escala depois de errar varias vezes.

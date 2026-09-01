@@ -393,12 +393,28 @@ function minutosDePausaRestantes() {
 /* O INSTANTE EM QUE O SHOW COMECOU. Com ele, a jornada e relativa ao
    lancamento; sem ele, e a hora do relogio (o comportamento antigo).
    Aceita ISO ("2026-09-01T15:00:00") ou epoch em ms. */
-const SHOW_START = (() => {
-  const v = String(process.env.SHOW_START || "").trim();
-  if (!v) return null;
-  const t = /^\d+$/.test(v) ? Number(v) : Date.parse(v);
-  return Number.isFinite(t) && t > 0 ? t : null;
-})();
+/* A HORA DO LANCAMENTO. (01/09/2026)
+   Era lida so do ambiente, no boot. No Railway isso nunca funcionou: a rota
+   /api/lancar tentava gravar SHOW_START em /app/.env.yuna — arquivo que nao
+   existe no deploy — devolvia 500, e mesmo se existisse o restart que ela
+   mesma mandava dar apagaria a marca, porque /app nao e o volume.
+
+   Agora mora num JSON do VOLUME e e relida a CADA CICLO: marcar o lancamento
+   deixou de precisar de restart e passou a sobreviver a deploy. O ambiente
+   continua valendo como alternativa, para quem preferir variavel. */
+const LANCAMENTO_FILE = () => process.env.LANCAMENTO_FILE || path.join(DATA, "lancamento.json");
+
+function lerShowStart() {
+  try {
+    const j = JSON.parse(fs.readFileSync(LANCAMENTO_FILE(), "utf8"));
+    const t = Date.parse(j.showStart);
+    if (Number.isFinite(t)) return t;
+  } catch { /* sem lancamento marcado e o normal antes do dia */ }
+  const env = Date.parse(process.env.SHOW_START || "");
+  return Number.isFinite(env) ? env : 0;
+}
+
+let SHOW_START = lerShowStart();
 const HORAS_ACORDADA = num("AWAKE_HOURS", 16);
 const HORAS_DORMINDO = num("SLEEP_HOURS", 8);
 
@@ -4876,6 +4892,19 @@ async function loop() {
     processBankDecisions();
     // Recargas da treasury (console -> treasury-topups.json). Mesmo compasso.
     processTreasuryTopups();
+    /* A HORA DO LANCAMENTO, relida a cada ciclo. Antes so era lida no boot, e
+       marcar o lancamento exigia reiniciar — no Railway o restart apagava a
+       marca junto, porque ela era gravada fora do volume. */
+    {
+      const agora = lerShowStart();
+      if (agora !== SHOW_START) {
+        SHOW_START = agora;
+        if (agora) {
+          emit("system", null,
+            `— THE SHOW STARTS NOW: ${HORAS_ACORDADA}h awake, ${HORAS_DORMINDO}h asleep, from this moment —`);
+        }
+      }
+    }
     // O que o Michel fez no painel do X (publicou / descartou / colou uma
     // resposta). Mesmo compasso: chega antes do proximo pensamento dela.
     processXAcoes();
@@ -4965,11 +4994,26 @@ const log = (m) => process.stdout.write(`${redact(String(m))}\n`);
 const trim = (s, n) => (String(s).length > n ? String(s).slice(0, n) + "…" : String(s));
 
 // Exportado para teste. So roda o mundo quando chamado direto, nunca ao importar.
-export { state, cfg, collectRent, postDailyBill, rollDay, runSchedule, apply, newAgent, buildSystem, reloadLiveConfig,
+export { state, cfg, lerShowStart, collectRent, postDailyBill, rollDay, runSchedule, apply, newAgent, buildSystem, reloadLiveConfig,
   incomeMix, publish, saveCheckpoint, loadCheckpoint, situationFor, ORDER, SOZINHA };
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
+  /* AVISOS DE PRE-VOO (01/09/2026). Nenhum destes dava erro: o show subia
+     parecendo saudavel e falhava no meio, o que e pior que nao subir. */
+  if (!String(process.env.SOLANA_RPC || "").trim()) {
+    log("!! SEM SOLANA_RPC — caindo no RPC publico da Solana, que limita taxa e");
+    log("   devolve 429. Com dinheiro real isso vira trade e mint falhando de");
+    log("   forma aleatoria, parecendo bug do mercado. Pegue um RPC dedicado.");
+  }
+  if (String(process.env.REAL_TRADING || "") === "1" && !lerShowStart() && !process.env.TZ) {
+    log("!! SEM TZ E SEM LANCAMENTO MARCADO — a janela ativa segue o relogio do");
+    log("   container (UTC). No Brasil ela dormiria as 21h, em cima da plateia.");
+  }
+  if (!String(process.env.LIVE_CHAT_MINT || "").trim()) {
+    log("!! SEM LIVE_CHAT_MINT — ela nao le o chat da live e o que ela 'fala com");
+    log("   a sala' aparece na TELA mas nao chega na pump.fun. Ninguem ve.");
+  }
   if (!process.env.ANTHROPIC_API_KEY) {
     log("ANTHROPIC_API_KEY nao esta no .env — sem chave nao ha turno.");
     process.exit(1);
