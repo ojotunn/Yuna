@@ -484,7 +484,16 @@ function acharCaminho(livre,ox,oy,dx,dy){
         }
         const cont=new Int32Array(pai.length);
         for(let i=0;i<w*h;i++) if(lab[i]) cont[acha(lab[i])]++;
-        for(let i=0;i<w*h;i++) if(lab[i] && cont[acha(lab[i])]<300) uniao[i]=0;
+        /* CORTE RELATIVO A MAIOR MANCHA, nao um numero fixo.
+           O corte fixo de 300px deixava passar cacos grandes: nos pesinhos a
+           silhueta ia de x=378 a 796 (418px de largura) pra uma figura agachada
+           de ~100. O gato cruzava e era recortado por reflexo e sombra — "fica
+           bugado e sumindo". Ela e o movel sao a mancha GRANDE; o resto e
+           migalha ao lado disso. */
+        let maior=0;
+        for(let k=1;k<cont.length;k++) if(cont[k]>maior) maior=cont[k];
+        const corte=Math.max(300, Math.round(maior*0.12));
+        for(let i=0;i<w*h;i++) if(lab[i] && cont[acha(lab[i])]<corte) uniao[i]=0;
       }
       const cvM=document.createElement("canvas"); cvM.width=w; cvM.height=h;
       const gM=cvM.getContext("2d");
