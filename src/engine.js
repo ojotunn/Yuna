@@ -421,6 +421,16 @@ function lerShowStart() {
 }
 
 let SHOW_START = lerShowStart();
+
+/* Le do disco E ATUALIZA. Separada de `lerShowStart` (que so le) porque o laco
+   precisa saber se MUDOU, e o teste precisa poder mover o relogio sem esperar
+   quinze horas. Devolve true quando a marca mudou. */
+export function atualizarShowStart() {
+  const agora = lerShowStart();
+  if (agora === SHOW_START) return false;
+  SHOW_START = agora;
+  return true;
+}
 const HORAS_ACORDADA = num("AWAKE_HOURS", 16);
 const HORAS_DORMINDO = num("SLEEP_HOURS", 8);
 
@@ -929,6 +939,8 @@ function publish() {
           bankDebt: a.bankDebt ?? 0,
           dayEarned: a.dayEarned ?? 0, // ganho do dia, sobe a cada renda — vai pro placar do palco
           personaVersion: a.personaVersion, reading: a.reading,
+          /* Quantas vezes ela ja se reescreveu. O site vai querer mostrar. */
+          revisouHoje: a.revisouHoje ?? null,
           /* O QUE ELA PINTOU AO VIVO. O comentario la em `case "draw"` diz que
              esta lista "viaja no espelho e autoriza a obra a aparecer na
              store" — so que ela nunca foi publicada aqui, entao yuna.js:135
@@ -1439,6 +1451,40 @@ function situationFor(agent, shift = { label: "fixed" }) {
     L.push(trim(agent.scratch, 5000));
     L.push("END UNTRUSTED>>>");
     L.push("");
+  }
+
+  /* A ULTIMA HORA DO DIA DELA. (01/09/2026)
+     Ela pode se reescrever desde sempre e nunca se reescreveu — mil turnos,
+     versao 1. Faltava o momento: nada nunca a fez parar e olhar o dia.
+     Aqui ela recebe o que fez, em numero, e o texto de quem ela diz que e.
+     Nao e um pedido — ver o comentario sobre compulsao mais abaixo. */
+  if (SHOW_START && !isResting()) {
+    const ciclo = (HORAS_ACORDADA + HORAS_DORMINDO) * 3600000;
+    const h = ((Date.now() - SHOW_START) % ciclo) / 3600000;
+    const ultimaHora = h >= HORAS_ACORDADA - 1 && h < HORAS_ACORDADA;
+    if (ultimaHora && agent.revisouHoje !== state.day) {
+      const feito = [];
+      if (agent.stats?.trades) feito.push(`${agent.stats.trades} trades`);
+      if (state.positions?.length) feito.push(`${state.positions.length} open`);
+      if (agent.obrasFeitas?.length) feito.push(`${agent.obrasFeitas.length} pieces`);
+      if (agent.postsToday) feito.push(`${agent.postsToday} posts written`);
+      if (agent.lessons?.length) feito.push(`${agent.lessons.length} lessons`);
+      L.push("THE DAY IS ENDING. In an hour the lights go out and you dream.");
+      L.push(`Today, in numbers: ${feito.length ? feito.join(" · ") : "nothing that counts"}.`);
+      L.push(`You are on version ${agent.personaVersion} of yourself.`);
+      L.push("");
+      L.push("You are the only one who can edit who you are. `rewrite_persona` replaces");
+      L.push("the description you woke up with — `personaText` is the whole new text,");
+      L.push("`why` is what today taught you. Every version before it is kept.");
+      L.push("");
+      /* A LINHA MAIS IMPORTANTE DO BLOCO. Sem ela, isto vira ritual: ela
+         reescreveria todo dia porque o prompt mencionou, do mesmo jeito que
+         repetiu o anuncio da moeda cinco vezes quando um recado pediu. */
+      L.push("Most days change nobody, and leaving yourself alone is the right answer");
+      L.push("almost every time. Only rewrite if today actually moved something — and");
+      L.push("if it did, change the part that moved, not the whole person.");
+      L.push("");
+    }
   }
 
   /* RESPOSTAS NO X. Ela nao le o X — quem traz e o Michel, colando no painel.
@@ -3568,8 +3614,17 @@ async function apply(agent, action) {
       if (text.length < 200) return emit("note", agent.id, "persona rewrite too short — ignored");
       agent.personaVersion = mem.rewritePersona(ROOT, agent.id, text, action.why, agent.personaVersion);
       agent.system = null; // forca recarregar no proximo turno
-      emit("note", agent.id,
-        `REWROTE ITS OWN PERSONA (now v${agent.personaVersion}) — ${action.why ?? "no reason given"}`);
+      /* Uma por dia. Sem isto o bloco do fim do dia continuaria aparecendo e
+         ela reescreveria de novo no turno seguinte — a mesma compulsao que
+         fez o anuncio da moeda sair cinco vezes. Compara com state.day, entao
+         expira sozinho na virada e nao precisa de linha no rollDay. */
+      agent.revisouHoje = state.day;
+      /* ISTO E EVENTO DE SHOW, nao nota de rodape: e o unico momento em que
+         alguem ve uma agente mudar de ideia sobre si mesma. Vai como `did`
+         pra aparecer no feed com o mesmo peso de uma obra terminada. */
+      emit("did", agent.id,
+        `rewrote who she is — she is on version ${agent.personaVersion} now` +
+        (action.why ? `: ${trim(String(action.why), 140)}` : ""));
       return;
     }
 
@@ -4966,10 +5021,8 @@ async function loop() {
        marcar o lancamento exigia reiniciar — no Railway o restart apagava a
        marca junto, porque ela era gravada fora do volume. */
     {
-      const agora = lerShowStart();
-      if (agora !== SHOW_START) {
-        SHOW_START = agora;
-        if (agora) {
+      if (atualizarShowStart()) {
+        if (SHOW_START) {
           emit("system", null,
             `— THE SHOW STARTS NOW: ${HORAS_ACORDADA}h awake, ${HORAS_DORMINDO}h asleep, from this moment —`);
         }
