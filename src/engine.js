@@ -676,6 +676,44 @@ function emit(kind, agentId, text, extra = {}) {
 }
 
 let ultimoPublish = 0, publishAgendado = null;
+/* ===========================================================================
+   O ESPELHO NO RAILWAY.
+   O motor de imagem e local, entao quem desenha e esta maquina. Se o site
+   publico tivesse o proprio motor, seriam dois cerebros e duas verdades: a
+   live mostrando ela trabalhando e o site mostrando ela parada. Entao a fonte
+   e uma so — este processo — e o site la e um espelho.
+   Nao viaja video: viaja o JSON do estado, que tem poucos KB.
+   =========================================================================== */
+const ESPELHO_URL = (process.env.MIRROR_URL || "").replace(/\/+$/, "");
+const ESPELHO_TOKEN = process.env.ADMIN_TOKEN || "";
+let espelhoUltimo = 0;
+let espelhoAvisou = false;
+
+async function espelharNoSite() {
+  if (!ESPELHO_URL || !ESPELHO_TOKEN) return;
+  const agora = Date.now();
+  if (agora - espelhoUltimo < 5000) return;      // o site publico nao precisa de 60fps
+  espelhoUltimo = agora;
+  try {
+    const r = await fetch(`${ESPELHO_URL}/api/estado-externo`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-admin-token": ESPELHO_TOKEN },
+      /* Le o MESMO snapshot que o `publish()` acabou de gravar, em vez de
+         montar outro: duas montagens divergiriam no primeiro campo novo, e o
+         site passaria a mostrar uma versao levemente diferente da live. */
+      body: JSON.stringify({ running: true, state: JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok && !espelhoAvisou) {
+      espelhoAvisou = true;
+      log(`espelho no site respondeu HTTP ${r.status} — o site fica desatualizado`);
+    } else if (r.ok) espelhoAvisou = false;
+  } catch {
+    /* internet caiu, Railway fora do ar: o show local nao para por isso.
+       Volta sozinho no proximo envio. */
+  }
+}
+
 function publicarAoVivo() {
   const agora = Date.now();
   if (agora - ultimoPublish > 700) {
@@ -805,6 +843,9 @@ function publish() {
   try {
     fs.mkdirSync(DATA, { recursive: true });
     fs.writeFileSync(STATE_FILE, JSON.stringify(snap, null, 2));
+    /* e o espelho no site publico, com throttle proprio (5s). Nao espera: se a
+       rede estiver lenta, a tela local nao pode ficar parada por causa disso. */
+    espelharNoSite();
   } catch { /* disco cheio nao pode derrubar o show */ }
 }
 

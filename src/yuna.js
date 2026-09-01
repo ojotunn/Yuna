@@ -90,6 +90,11 @@ function enviar(res, codigo, corpo) {
   res.end(JSON.stringify(corpo));
 }
 
+/* O ultimo estado que a maquina de casa mandou. Em memoria de proposito:
+   se o servico reiniciar, e melhor cair pro estado local do que servir
+   um retrato velho como se fosse ao vivo. */
+let estadoDeCasa = null;
+
 const servidor = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -196,7 +201,34 @@ const servidor = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({ versao: Math.round(carimbo) }));
   }
 
+  /* O ESTADO VINDO DE CASA. Ver o comentario no topo: uma fonte so.
+     Se chegou estado externo recente, ele MANDA — o motor de casa e a verdade,
+     e o daqui (se existir) e secundario. */
+  if (url.pathname === "/api/estado-externo" && req.method === "POST") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    let corpo = "";
+    for await (const p of req) {
+      corpo += p;
+      if (corpo.length > 4e6) return enviar(res, 413, { erro: "estado grande demais" });
+    }
+    try {
+      const j = JSON.parse(corpo);
+      if (!j || typeof j !== "object") throw new Error("nao e objeto");
+      estadoDeCasa = { estado: j.state ?? j, running: !!j.running, t: Date.now() };
+      return enviar(res, 200, { ok: true });
+    } catch (e) {
+      return enviar(res, 400, { erro: String(e.message).slice(0, 100) });
+    }
+  }
+
   if (url.pathname === "/api/state") {
+    /* O QUE VEIO DE CASA VENCE, enquanto for recente. Dois minutos de validade:
+       se a maquina de casa cair, o site nao pode ficar mostrando para sempre um
+       retrato de ela trabalhando. */
+    if (estadoDeCasa && Date.now() - estadoDeCasa.t < 120000)
+      return enviar(res, 200, { running: estadoDeCasa.running, state: estadoDeCasa.estado, deCasa: true });
     let estado = filho ? ultimoEstado : null;
     if (!estado) {
       try { estado = JSON.parse(fs.readFileSync(ESTADO, "utf8")); } catch { estado = null; }
