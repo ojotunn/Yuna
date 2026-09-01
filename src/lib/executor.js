@@ -226,10 +226,10 @@ export function origemPermitida(url) {
 // tokens tem que ser um trade — nao uma entrega.
 export function checkWhitelist(info, expectedSigner) {
   if (info.signer !== expectedSigner)
-    return { ok: false, reason: `a transacao seria assinada por ${info.signer}, nao pelo agente` };
+    return { ok: false, reason: `this would be signed by ${info.signer}, not by the agent` };
   for (const prog of info.programs) {
     if (!ALLOWED_PROGRAMS.has(prog))
-      return { ok: false, reason: `programa fora da lista branca: ${prog}` };
+      return { ok: false, reason: `program not on the allowlist: ${prog}` };
   }
 
   /* DELEGAR E SEMPRE NAO — com corretora ou sem.
@@ -242,7 +242,7 @@ export function checkWhitelist(info, expectedSigner) {
     const nome = DELEGAR.get(ix.op);
     if (nome)
       return { ok: false, reason:
-        `a transacao pede ${nome} — dar a outra pessoa poder sobre os tokens dela. Nenhum trade precisa disso.` };
+        `this asks for ${nome} — handing someone else power over her tokens. No trade needs that.` };
   }
 
   /* TOKEN SO SE MOVE ATRAVESSANDO UMA CORRETORA.
@@ -256,7 +256,7 @@ export function checkWhitelist(info, expectedSigner) {
   if (move.length && !info.programs.some((prog) => CORRETORAS.has(prog))) {
     const quais = [...new Set(move.map((ix) => MOVER.get(ix.op)))].join(", ");
     return { ok: false, reason:
-      `a transacao move token (${quais}) sem passar por corretora nenhuma — isso e transferencia, nao trade` };
+      `this moves tokens (${quais}) without going through any exchange — that is a transfer, not a trade` };
   }
   return { ok: true };
 }
@@ -317,18 +317,18 @@ export async function simulateAndCheck(txBytes, { owner, maxSolSpend }) {
     },
   ]);
   const v = sim?.value;
-  if (!v) return { ok: false, reason: "o RPC nao devolveu simulacao" };
+  if (!v) return { ok: false, reason: "the RPC returned no simulation" };
   if (v.err) {
     const log = (v.logs ?? []).slice(-3).join(" | ").slice(0, 200);
-    return { ok: false, reason: `a transacao falharia: ${JSON.stringify(v.err)}${log ? ` — ${log}` : ""}` };
+    return { ok: false, reason: `the transaction would fail: ${JSON.stringify(v.err)}${log ? ` — ${log}` : ""}` };
   }
   const post = v.accounts?.[0]?.lamports;
-  if (post == null) return { ok: false, reason: "simulacao sem saldo pos-transacao — nao assino as cegas" };
+  if (post == null) return { ok: false, reason: "the simulation returned no post-balance — I do not sign blind" };
   const pre = (await rpc("getBalance", [owner]))?.value ?? 0;
   const spentSol = (pre - post) / 1e9;
   // Teto com folga pequena para taxa de rede/prioridade (0.01 SOL).
   if (spentSol > maxSolSpend + 0.01)
-    return { ok: false, reason: `a transacao gastaria ${spentSol.toFixed(4)} SOL, acima do teto de ${maxSolSpend.toFixed(4)}` };
+    return { ok: false, reason: `this would spend ${spentSol.toFixed(4)} SOL, over the ${maxSolSpend.toFixed(4)} cap` };
   return { ok: true, spentSol, units: v.unitsConsumed ?? null };
 }
 
@@ -371,7 +371,7 @@ export async function approveAndSign(txBytes, { owner, keypairEnvKey, maxSolSpen
     const sim = await simulateAndCheck(txBytes, { owner, maxSolSpend });
     if (!sim.ok) return { ok: false, reason: sim.reason };
     const keypair = process.env[keypairEnvKey];
-    if (!keypair) return { ok: false, reason: `${keypairEnvKey} nao configurada` };
+    if (!keypair) return { ok: false, reason: `${keypairEnvKey} is not configured` };
     const signed = signTx(txBytes, info, keypair);
     return {
       ok: true, signed, spentSol: sim.spentSol,
@@ -401,22 +401,102 @@ export async function sendSigned(signed) {
 // Devolve { ok, signature, spentSol, reason }. Nunca lanca pra fora do try do
 // chamador sem motivo legivel — recusa e informacao, nao excecao.
 // ---------------------------------------------------------------------------
+/* DA PRA TENTAR DE NOVO?
+   Verdadeiro so quando e certo que NENHUMA transacao valida ficou na rede.
+   Na duvida, falso: nao comprar de novo e um prejuizo de oportunidade;
+   comprar duas vezes e um prejuizo de dinheiro. */
+export function daPraTentarDeNovo(motivo) {
+  const m = String(motivo || "").toLowerCase();
+
+  /* Recusa NOSSA, por principio — tentar de novo so repete a recusa. */
+  if (/lista branca|assinada por|transferencia, nao trade|approve|setauthority/.test(m))
+    return false;
+  /* Nao ha o que reamostrar: falta dinheiro ou falta configuracao. */
+  if (/insufficient|nao configurada|sem endereco|tamanho invalido|sem preco do sol/.test(m))
+    return false;
+
+  /* O PRECO ANDOU. E o caso do Michel, e o mais comum numa moeda nova:
+     `TooMuchSolRequired` (compra) e `TooLittleSolReceived` (venda) sao os
+     nomes que o programa da pump.fun devolve; 0x1772 e o mesmo erro em codigo. */
+  if (/slippage|toomuchsolrequired|toolittlesolreceived|0x1772|exceeded/.test(m))
+    return true;
+  /* Nada saiu: o intermediario ou a rede falhou ANTES do envio. */
+  if (/pumpportal|http (429|5\d\d)|fetch failed|timeout|econn|socket|blockhash/.test(m))
+    return true;
+  /* A CORRENTE rejeitou a transacao. Rejeitada e definitivo: nao existe uma
+     transacao valida pendente com essa assinatura. */
+  if (/transacao falhou on-chain/.test(m))
+    return true;
+  /* A simulacao recusou por gasto acima do teto: com a tolerancia maior o teto
+     tambem sobe (ver o laco em `trade`), entao vale mais uma tentativa. */
+  if (/acima do teto/.test(m))
+    return true;
+
+  return false;
+}
+
 export async function trade({
   owner, keypairEnvKey, action, mint, usd, solUsd, graduated = false,
-  maxRealTradeUsd = 1, slippage = 10, priorityFee = 0.00001, sellPercent = null,
+  maxRealTradeUsd = 1, slippage = null, priorityFee = 0.00001, sellPercent = null,
+  tentativas = null,
+}) {
+  /* A ESCADA DE TOLERANCIA. Cada tentativa aceita um pouco mais de escorregao
+     que a anterior — a primeira e apertada de proposito, porque na maioria das
+     vezes ela basta e paga o melhor preco. O teto de tentativas e baixo: se
+     tres nao pegaram, o mercado esta se movendo rapido demais para o tamanho
+     dela e insistir e pior que esperar o proximo turno. */
+  const ESCADA = (process.env.SLIPPAGE_ESCADA || "10,18,30")
+    .split(",").map((x) => Number(x.trim())).filter((x) => x > 0 && x <= 50);
+  const escada = slippage != null ? [Number(slippage)] : (ESCADA.length ? ESCADA : [10, 18, 30]);
+  const limite = Math.min(Number(tentativas) || escada.length, escada.length);
+
+  const tentadas = [];
+  for (let i = 0; i < limite; i++) {
+    const r = await tentarTrade({
+      owner, keypairEnvKey, action, mint, usd, solUsd, graduated,
+      maxRealTradeUsd, slippage: escada[i], priorityFee, sellPercent,
+    });
+    tentadas.push({ slippage: escada[i], ok: r.ok, motivo: r.reason ?? null });
+    if (r.ok) return { ...r, tentativas: tentadas };
+
+    /* NAO INSISTE NO QUE NAO ADIANTA. Recusa por principio, falta de saldo ou
+       erro de configuracao devolvem o mesmo resultado na proxima tentativa —
+       e cada tentativa custa uma chamada de rede e alguns segundos de live. */
+    if (!daPraTentarDeNovo(r.reason)) return { ...r, tentativas: tentadas };
+    if (i < limite - 1) {
+      /* Uma pausa curta: o bloco seguinte traz preco novo, e martelar o RPC no
+         mesmo instante so repete a mesma leitura. */
+      await new Promise((espera) => setTimeout(espera, 1200));
+    }
+  }
+
+  const ultima = tentadas[tentadas.length - 1];
+  return {
+    ok: false,
+    reason: `${ultima?.motivo || "it did not go through"} — tried ${tentadas.length}x, ` +
+            `at ${tentadas.map((t) => t.slippage + "%").join(", ")} slippage`,
+    tentativas: tentadas,
+  };
+}
+
+/* UMA tentativa. Foi extraida de `trade` para o laco acima poder repeti-la sem
+   duplicar nada — o corpo e exatamente o que existia antes. */
+async function tentarTrade({
+  owner, keypairEnvKey, action, mint, usd, solUsd, graduated,
+  maxRealTradeUsd, slippage, priorityFee, sellPercent,
 }) {
   try {
-    if (!owner) return { ok: false, reason: "sem endereco do agente" };
+    if (!owner) return { ok: false, reason: "no wallet address for this agent" };
     const keypair = process.env[keypairEnvKey];
-    if (!keypair) return { ok: false, reason: `${keypairEnvKey} nao configurada` };
-    if (!(solUsd > 0)) return { ok: false, reason: "sem preco do SOL para converter o tamanho" };
+    if (!keypair) return { ok: false, reason: `${keypairEnvKey} is not configured` };
+    if (!(solUsd > 0)) return { ok: false, reason: "no SOL price to size this with" };
 
     // TETO DURO em dolar — vale mesmo que o broker tenha aprovado mais.
     // 0 = sem teto: o broker ja limitou pelo % da carteira real e pela curva.
     const sizeUsd = maxRealTradeUsd > 0
       ? Math.min(Number(usd) || 0, maxRealTradeUsd)
       : (Number(usd) || 0);
-    if (action === "buy" && !(sizeUsd > 0)) return { ok: false, reason: "tamanho invalido" };
+    if (action === "buy" && !(sizeUsd > 0)) return { ok: false, reason: "invalid size" };
     const amountSol = sizeUsd / solUsd;
 
     // Compra: amount em SOL. Venda: percentual do que tem do token.
@@ -433,12 +513,17 @@ export async function trade({
     // 1) peneira estrutural
     const info = inspectTx(txBytes);
     const wl = checkWhitelist(info, owner);
-    if (!wl.ok) return { ok: false, reason: `RECUSADO — ${wl.reason}` };
+    if (!wl.ok) return { ok: false, reason: `REFUSED — ${wl.reason}` };
 
-    // 2) simulacao + deltas (na venda o SOL so entra, entao o teto e a taxa)
-    const maxSolSpend = isBuy ? amountSol * 1.2 : 0;
+    /* 2) simulacao + deltas (na venda o SOL so entra, entao o teto e a taxa)
+       O TETO ACOMPANHA A TOLERANCIA: era `* 1.2` fixo, e com a escada de
+       slippage a tentativa de 30% seria recusada pela nossa propria peneira
+       ("gastaria X SOL acima do teto") — o retry brigaria com a trava em vez
+       de usar. Continua sendo teto DURO: a folga e a tolerancia pedida mais
+       5% de taxa, nunca um cheque em branco. */
+    const maxSolSpend = isBuy ? amountSol * (1 + (Number(slippage) || 10) / 100 + 0.05) : 0;
     const sim = await simulateAndCheck(txBytes, { owner, maxSolSpend });
-    if (!sim.ok) return { ok: false, reason: `RECUSADO — ${sim.reason}` };
+    if (!sim.ok) return { ok: false, reason: `REFUSED — ${sim.reason}` };
 
     // 3) assina e envia
     const signed = signTx(txBytes, info, keypair);

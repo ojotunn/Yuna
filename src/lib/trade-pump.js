@@ -269,7 +269,7 @@ export async function comprarNaTela(page, { mint, usd, prints = null }) {
      aparece no saldo. */
   const chegou = await confirmarSaldo(mint, "positivo", 50);
   if (!chegou) {
-    return { ok: false, botao, aviso: "a tela aceitou mas o token nao chegou na carteira",
+    return { ok: false, botao, aviso: "the screen accepted it but the token never arrived",
              tela, prints: passos, assinatura: firma?.assinatura || null, url: firma?.url || null };
   }
   console.log(`[trade] a corrente confirma: ${chegou} do token na carteira`);
@@ -309,7 +309,7 @@ export async function venderNaTela(page, { mint, pct = 100, prints = null }) {
   /* vender e o mesmo: so vendeu quando o saldo do token zerou */
   const zerou = pct >= 100 ? await confirmarSaldo(mint, "zero", 60) : true;
   if (!zerou) {
-    return { ok: false, botao, aviso: "a tela aceitou mas o token continua na carteira",
+    return { ok: false, botao, aviso: "the screen accepted it but the token is still in the wallet",
              tela, prints: passos, assinatura: firma?.assinatura || null, url: firma?.url || null };
   }
   return { ok: !falhou, botao, aviso: falhou ? falhou[0] : null, tela, prints: passos,
