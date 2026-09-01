@@ -549,8 +549,8 @@ const servidor = http.createServer(async (req, res) => {
     try { dado = JSON.parse(corpo || "{}"); } catch { return enviar(res, 400, { erro: "corpo torto" }); }
 
     const tipo = String(dado.tipo || "");
-    if (!["postei", "descartar", "comentario"].includes(tipo))
-      return enviar(res, 400, { erro: "tipo tem que ser postei, descartar ou comentario" });
+    if (!["postei", "descartar", "comentario", "restaurar"].includes(tipo))
+      return enviar(res, 400, { erro: "tipo tem que ser postei, descartar, comentario ou restaurar" });
     if (tipo === "comentario" && !String(dado.texto || "").trim())
       return enviar(res, 400, { erro: "comentario vazio" });
     if (tipo !== "comentario" && !String(dado.post || "").trim())

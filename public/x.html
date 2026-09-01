@@ -316,18 +316,44 @@ function cartaoDoPost(p, historico) {
     box.appendChild(w);
   }
 
-  if (historico) return box;
+  if (historico) {
+    /* DESFAZER. Um clique errado em "marcar como publicado" enterrava o post
+       no historico pra sempre — foi o que aconteceu com os quatro primeiros
+       dela. So aparece no que foi MARCADO, nunca no que foi descartado com
+       motivo (ali o motivo e a decisao, e desfazer apagaria a razao). */
+    if (p.sent) {
+      const acao = document.createElement("div");
+      acao.className = "acao";
+      const esp = document.createElement("span"); esp.className = "espaco"; acao.appendChild(esp);
+      const voltar = document.createElement("button");
+      voltar.textContent = "PUT IT BACK";
+      voltar.title = "it never went out — return it to the queue";
+      voltar.onclick = async () => {
+        voltar.disabled = true;
+        try { await mandar({ tipo: "restaurar", post: p.id }); aviso("back in the queue"); carregar(); }
+        catch { voltar.disabled = false; aviso("did not save"); }
+      };
+      acao.appendChild(voltar);
+      box.appendChild(acao);
+    }
+    return box;
+  }
 
   const acao = document.createElement("div");
   acao.className = "acao";
 
+  /* COPY E O PRINCIPAL. (01/09/2026)
+     Era "POSTED IT" que estava verde e destacado, e o Michel clicou nos quatro
+     primeiros posts dela achando que publicava — mas aquele botao so MARCA.
+     O botao mais chamativo tem que ser o primeiro passo do trabalho. */
   const copiar = document.createElement("button");
+  copiar.className = "principal";
   copiar.textContent = "COPY";
   copiar.onclick = async () => {
     try {
       await navigator.clipboard.writeText(p.text || "");
-      copiar.textContent = "COPIED"; copiar.classList.add("copiado");
-      setTimeout(() => { copiar.textContent = "COPY"; copiar.classList.remove("copiado"); }, 1600);
+      copiar.textContent = "COPIED";
+      setTimeout(() => { copiar.textContent = "COPY"; }, 1600);
     } catch { aviso("could not reach the clipboard — select the text by hand"); }
   };
   acao.appendChild(copiar);
@@ -346,8 +372,8 @@ function cartaoDoPost(p, historico) {
   acao.appendChild(esp);
 
   const saiu = document.createElement("button");
-  saiu.className = "principal";
-  saiu.textContent = "POSTED IT";
+  saiu.textContent = "MARK AS POSTED";
+  saiu.title = "only marks it here — publishing happens on X, after you copy";
   saiu.onclick = async () => {
     saiu.disabled = true;
     try { await mandar({ tipo: "postei", post: p.id }); aviso("marked — she will know"); carregar(); }

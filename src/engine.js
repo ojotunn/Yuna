@@ -1817,7 +1817,7 @@ function situationFor(agent, shift = { label: "fixed" }) {
   // lugar nenhum queima turno e confunde o agente.
   if (cfg.xEnabled) {
     L.push(
-      `  post             — \`text\`, plain text only, no links. ` +
+      `  post             — \`text\`, plain text only, no links, MAX 280 CHARACTERS. ` +
       `${cfg.xPostsPerDayEach - agent.postsToday} of ${cfg.xPostsPerDayEach} left today.`
     );
     L.push(
@@ -2050,6 +2050,16 @@ export function processXAcoes() {
         continue;
       }
       state.xVistas.push(a.id);
+      if (a.tipo === "restaurar") {
+        /* DESFAZER. O botao "POSTED IT" era o mais destacado do painel e o
+           Michel clicou nos quatro achando que publicava — culpa do desenho.
+           Sem isto, um clique errado enterra o post no historico pra sempre. */
+        delete post.sent;
+        delete post.quandoSaiu;
+        post.sent = false;
+        emit("note", post.agent, `that one is back in the queue — it never went out`);
+        continue;
+      }
       if (a.tipo === "postei") {
         post.sent = true;
         post.quandoSaiu = Date.now();
@@ -3373,10 +3383,19 @@ async function apply(agent, action) {
         return emit("denied", agent.id,
           `out of posts for today (${cfg.xPostsPerDayEach}/day) — a feed people can keep up with`);
       }
-      /* 280 CONTANDO A RETICENCIA. `trim` acrescenta o "…" DEPOIS de cortar,
-         entao trim(t, 280) devolve 281 caracteres — um a mais do que cabe no
-         X, e o corte era silencioso. */
-      const text = trim(String(action.text ?? ""), 279);
+      /* NAO CORTA: RECUSA. (01/09/2026)
+         Antes isto era `trim(text, 279)`, que corta e poe "…". Os quatro
+         primeiros posts dela sairam com exatamente 280/280, todos terminando
+         no meio de uma palavra — inuteis, e ela nunca soube, porque cortar
+         nao avisa ninguem. Recusar devolve a decisao pra quem escreveu. */
+      const bruto = String(action.text ?? "").trim();
+      if (bruto.length > 280) {
+        agent.stats.denials++;
+        return emit("denied", agent.id,
+          `that post is ${bruto.length} characters and the limit is 280 — ` +
+          "say it shorter, do not let me cut it for you");
+      }
+      const text = bruto;
       // Link custa 13x mais que texto puro na X. Eles postam texto; o link do
       // palco mora na bio e no post fixado.
       if (/https?:\/\//i.test(text)) {
