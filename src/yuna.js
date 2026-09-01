@@ -586,6 +586,61 @@ const servidor = http.createServer(async (req, res) => {
     return res.end(texto);
   }
 
+  /* O QUE ELA PEDIU. (01/09/2026)
+     Ela sabe que a lista de acoes dela e finita e escrita por outra pessoa.
+     `ask` e o que ela faz com isso: nomeia o que falta e argumenta. Aqui o
+     Michel responde — constroi ou diz por que nao. As duas voltam pra ela.
+
+     GET  /api/pedidos           o que esta aberto e o que ja foi respondido
+     POST {pedido, aceito, porque}   a resposta */
+  if (url.pathname === "/api/pedidos" && req.method === "POST") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    let corpo = "";
+    for await (const p of req) { corpo += p; if (corpo.length > 8000) break; }
+    let d = {};
+    try { d = JSON.parse(corpo || "{}"); } catch { return enviar(res, 400, { erro: "corpo torto" }); }
+    if (!String(d.pedido || "").trim()) return enviar(res, 400, { erro: "falta o id do pedido" });
+    if (typeof d.aceito !== "boolean") return enviar(res, 400, { erro: "aceito tem que ser true ou false" });
+    /* RECUSA PRECISA DE MOTIVO. Um "nao" sem porque ensina que pedir nao
+       adianta; um "nao, porque X" ensina o formato do que vale pedir. */
+    if (!d.aceito && !String(d.porque || "").trim())
+      return enviar(res, 400, { erro: "recusa precisa de motivo — ela le" });
+
+    const arq = process.env.X_ACOES_FILE || path.join(ROOT, "src", "data", "x-acoes.json");
+    try {
+      let acoes = [];
+      try { acoes = JSON.parse(fs.readFileSync(arq, "utf8"))?.acoes ?? []; } catch {}
+      const id = `r${Date.now().toString(36)}${acoes.length.toString(36)}`;
+      acoes.push({ id, tipo: "responder", quando: Date.now(),
+        pedido: String(d.pedido).slice(0, 40), aceito: !!d.aceito,
+        ...(d.porque ? { porque: String(d.porque).slice(0, 400) } : {}) });
+      if (acoes.length > 300) acoes = acoes.slice(-150);
+      fs.mkdirSync(path.dirname(arq), { recursive: true });
+      fs.writeFileSync(arq, JSON.stringify({ acoes }, null, 2));
+      console.log(`[pedido] ${d.aceito ? "aceito" : "recusado"}: ${d.pedido}`);
+      return enviar(res, 200, { ok: true, vale: "no proximo turno dela" });
+    } catch (e) { return enviar(res, 500, { erro: String(e.message).slice(0, 160) }); }
+  }
+
+  if (url.pathname === "/api/pedidos") {
+    const chk = process.env.CHECKPOINT_FILE || path.join(ROOT, "src", "data", "checkpoint-yuna.json");
+    let pedidos = [];
+    try { pedidos = JSON.parse(fs.readFileSync(chk, "utf8"))?.pedidos ?? []; } catch {}
+    const tok = req.headers["x-admin-token"];
+    const dono = process.env.ADMIN_TOKEN && tok === process.env.ADMIN_TOKEN;
+    /* PUBLICO DE PROPOSITO, e so o que ja foi respondido: a lista do que ela
+       pediu e do que foi recusado (com o motivo) e a parte mais incomum deste
+       show. O que ainda esta aberto so o dono ve — senao a resposta dele vira
+       enquete. */
+    return enviar(res, 200, {
+      respondidos: pedidos.filter((q) => q.estado !== "aberto")
+        .sort((a, b) => b.t - a.t).slice(0, 60),
+      ...(dono ? { abertos: pedidos.filter((q) => q.estado === "aberto").sort((a, b) => b.t - a.t) } : {}),
+    });
+  }
+
   /* ===================== O PAINEL DO X =====================
      O X barrou o login automatizado (deteccao de navegador, nao de conta nem
      de IP — o Michel confirmou deslogando do Chrome dele e religando). Entao

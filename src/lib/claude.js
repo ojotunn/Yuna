@@ -144,6 +144,11 @@ const ACTION_SCHEMA = {
             // METAS de longo prazo (o horizonte alem do aluguel). Reusa `text`
             // (a lista de aspiracoes, uma por linha). Enum e de graca.
             "aspire",
+            // PEDIR O QUE NAO EXISTE. Ela sabe que a lista de acoes e finita
+            // (o prompt diz onde ela acaba); isto e o que fazer com esse
+            // conhecimento. Reusa `text` (o que falta) e `reason` (por que).
+            // Enum e de graca; campo com union nao seria.
+            "ask",
             "post",
             "remember",
             "rewrite_persona",

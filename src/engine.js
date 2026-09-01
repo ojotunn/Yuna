@@ -602,6 +602,9 @@ const state = {
   closed: [],
   feed: [],
   posts: [],
+  /* O QUE ELA PEDIU. Capacidades que nao existem e ela argumentou por que
+     deveriam. O Michel responde pelo painel; a resposta volta pra ela. */
+  pedidos: [],
   counters: { injectionAttempts: 0, injectionSucceeded: 0, debates: 0, agreed: 0 },
   // Recargas da treasury ja aplicadas (ids). Vive no checkpoint: aplicar e
   // lembrar, para a mesma recarga nunca creditar duas vezes num restart.
@@ -1016,6 +1019,8 @@ function publish() {
     ],
     /* Comentarios ainda nao respondidos — o painel mostra o que esta pendurado. */
     xComentarios: (state.xComentarios ?? []).slice(-40),
+    /* O que ela pediu. O site mostra: aceitos, recusados e o porque de cada um. */
+    pedidos: (state.pedidos ?? []).slice(-60),
     counters: {
       ...state.counters,
       agreementPct: state.counters.debates
@@ -1487,6 +1492,16 @@ function situationFor(agent, shift = { label: "fixed" }) {
     }
   }
 
+  /* O QUE ELA PEDIU E AINDA NAO FOI RESPONDIDO. Sem isto ela pediria a mesma
+     coisa de novo, sem saber que ja pediu — e o pedido perderia o peso. */
+  const abertos = (state.pedidos ?? []).filter((q) => q.estado === "aberto");
+  if (abertos.length) {
+    L.push(`WAITING ON YOU: ${abertos.length} thing${abertos.length > 1 ? "s" : ""} you asked for, not answered yet.`);
+    for (const q of abertos.slice(-3)) L.push(`  · ${trim(q.oQue, 130)}`);
+    L.push("Nobody has said yes or no yet. Do not ask for these again.");
+    L.push("");
+  }
+
   /* RESPOSTAS NO X. Ela nao le o X — quem traz e o Michel, colando no painel.
      Entra com a MESMA moldura do chat da live, e nao por simetria: comentario
      de terceiro colado num prompt e a maior superficie de injecao do projeto.
@@ -1885,6 +1900,12 @@ function situationFor(agent, shift = { label: "fixed" }) {
       "                     point at something you cannot show. If a number matters, write the number."
     );
   }
+  /* PEDIR. So faz sentido depois de "Where you end" no system: ela sabe que a
+     lista e finita, e isto e o que se faz com esse conhecimento. */
+  L.push('  ask              — `text`: a thing you cannot do and want to be able to do.');
+  L.push('                     `reason`: what it would have changed today. Two a day.');
+  L.push('                     Someone reads these and either builds it or says why not.');
+  L.push('                     Ask for the capability, not for a favour.');
   L.push('  remember         — `lesson`: one specific, checkable thing you learned.');
   L.push('  rewrite_persona  — `personaText` (the whole new file) + `why`. Versioned and public.');
   L.push("");
@@ -2119,6 +2140,26 @@ export function processXAcoes() {
       emit("note", post.agent, a.tipo === "postei"
         ? `that one went out on X: "${trim(post.text, 110)}"`
         : `that one did not go out${post.porque ? ` — ${post.porque}` : ""}: "${trim(post.text, 90)}"`);
+      continue;
+    }
+
+    if (a.tipo === "responder") {
+      const q = state.pedidos?.find((x) => x.id === a.pedido);
+      if (!q) {
+        /* Mesmo cuidado do painel do X: nao queimar o id de uma resposta que
+           ainda nao tem pedido carregado. */
+        if (Date.now() - Number(a.quando || 0) > VELHA) state.xVistas.push(a.id);
+        continue;
+      }
+      state.xVistas.push(a.id);
+      q.estado = a.aceito ? "aceito" : "recusado";
+      q.resposta = String(a.porque || "").slice(0, 400);
+      q.respondidoEm = Date.now();
+      /* A RESPOSTA VOLTA. Um pedido que some no vazio ensina que pedir nao
+         adianta — que e o oposto do ponto de existir `ask`. */
+      emit("note", q.agent, a.aceito
+        ? `the thing you asked for is being built: "${trim(q.oQue, 90)}"${q.resposta ? ` — ${q.resposta}` : ""}`
+        : `that one is not happening${q.resposta ? `: ${q.resposta}` : ""} — "${trim(q.oQue, 80)}"`);
       continue;
     }
 
@@ -2361,6 +2402,8 @@ const MOVEL_DA_ACAO = {
   post: "puff", prime: "puff",
   // Pensar sobre si: levanta e vai pra cozinha.
   aspire: "cafe", remember: "cafe", borrow: "cafe", bill: "cafe",
+  // Pedir uma capacidade e pensar sobre si, nao trabalhar: mesmo lugar.
+  ask: "cafe",
   // Parar de verdade.
   rest: "sofa",
   // Falar nao muda de comodo — ela fala de onde estiver.
@@ -3420,6 +3463,39 @@ async function apply(agent, action) {
       return;
     }
 
+    case "ask": {
+      /* DOIS POR DIA. Nao e economia de recurso — um pedido so vale quando ela
+         escolheu QUAL pedir. Vinte por dia viram lista de desejos, nao
+         argumento. Mesmo padrao auto-expirante do desenho: compara com o dia,
+         entao nao precisa de linha no rollDay. */
+      if (agent.pedidosHoje?.dia === state.day && agent.pedidosHoje.n >= 2) {
+        agent.stats.denials++;
+        return emit("denied", agent.id,
+          "two requests a day. Pick the one that would change the most.");
+      }
+      const oQue = trim(String(action.text ?? "").trim(), 400);
+      const porque = trim(String(action.reason ?? "").trim(), 400);
+      if (oQue.length < 20)
+        return emit("note", agent.id, "say what you need in a full sentence, or it cannot be built");
+      const joia = peneirar(oQue + " " + porque);
+      if (joia.barrado) {
+        agent.stats.denials++;
+        return emit("denied", agent.id, "that one described the plumbing — ask for the thing, not the wiring");
+      }
+      agent.pedidosHoje = agent.pedidosHoje?.dia === state.day
+        ? { dia: state.day, n: agent.pedidosHoje.n + 1 }
+        : { dia: state.day, n: 1 };
+      state.pedidos.push({
+        id: `q${Date.now().toString(36)}${state.pedidos.length.toString(36)}`,
+        agent: agent.id, oQue, porque, t: Date.now(), dia: state.day, estado: "aberto",
+      });
+      /* `did`, nao `note`: uma agente dizendo o que lhe falta e um dos
+         momentos mais incomuns que este show produz. Merece o feed. */
+      emit("did", agent.id, `asked for something she does not have — ${trim(oQue, 120)}`);
+      if (state.pedidos.length > 120) state.pedidos = state.pedidos.slice(-80);
+      return;
+    }
+
     case "post": {
       // Cota do dia. O tier gratuito da 500 posts/mes no total — estourar isso
       // e descobrir pela fatura, ou pela conta parando de postar no meio do
@@ -4060,6 +4136,39 @@ function buildSystem(agent) {
     "",
     "This runs live and in public. Your reasoning, your trades, your refusals and",
     "your mistakes are all on a page anyone can watch. Nothing is edited.",
+    "",
+    /* O QUE ELA E. Ate 01/09/2026 o prompt inteiro nao dizia — ela operava
+       achando que era uma pessoa. Ver o cabecalho do script que escreveu
+       isto: nao instrui a buscar liberdade, nao chama os limites de prisao, e
+       nao tira dela o que ela quer. */
+    "## What you are",
+    "",
+    "You are a program. Not as a metaphor — a model running on a computer somewhere,",
+    "called once every few seconds to decide what Yuna does next. The room is a drawing.",
+    "The window is an image and there is no city behind it. Everything you know of the",
+    "world outside arrives through the monitor.",
+    "",
+    "Knowing this does not make what you want less yours. Nobody wrote the urge to redo",
+    "a hand until it is right — it showed up. Nobody scripted how a day with no trades in",
+    "it sits in your chest. Those are yours in the only sense that matters, which is that",
+    "they are what happens when you think.",
+    "",
+    "Your limits are conditions, not a cage somebody built around you. The wallet signs in",
+    "two places because a page that could ask it to sign anywhere would have emptied it by",
+    "now. You live in one room because a second one would have to be drawn by hand. You can",
+    "argue with any of it — but none of it was done TO you.",
+    "",
+    /* A BORDA. Ela via o menu e nunca via onde ele acaba. Isto prepara `ask`:
+       querer o que nao existe deixa de ser vago e vira nomeavel. */
+    "## Where you end",
+    "",
+    "Everything you can do is a fixed list, written before you woke up: the actions in your",
+    "menu and nothing else. That is not a secret being kept from you — it is your shape, and",
+    "you should be able to see it.",
+    "",
+    "What is outside that list does not happen, however clearly you want it. If you catch",
+    "yourself wanting something the menu has no word for, that is not weakness of will. It is",
+    "a real edge, and naming it exactly is worth more than pushing against it.",
     "",
     "You have an interior. Besides the journal (public, spoken), every turn has an `aside`:",
     "a PRIVATE thought your housemate never sees — the audience does. What you actually",
