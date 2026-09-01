@@ -86,13 +86,60 @@ export function pareceRug(x, idadeHoras = null) {
 
 /* Vale arriscar $2 aqui? A pergunta nao e "vai subir" — e "consigo sair".
    Devolve { ok, motivo, x } pra a recusa poder ser dita em voz alta. */
-export function temSaida(x, { minVendedores = 15, minVendas = 30, minHolders = 200, idadeHoras = null } = {}) {
+/* RECALIBRADO EM 01/09/2026, e vale entender o porque antes de mexer.
+   Havia DOIS tipos de filtro aqui misturados, e so um e a regra do Michel:
+
+     PROPORCAO   "alguem conseguiu sair?" — compras contra vendas, dinheiro que
+                 entra e nao sai, compradores contra vendedores. E ISTO que
+                 descreve o rug que ele apontou: um candle gigante e depois so
+                 compra miuda. Continua igual, e e o juiz.
+
+     PISO ABSOLUTO  200 holders, 30 vendas, 15 vendedores. Isto nao detecta rug
+                 nenhum — so exige que a moeda seja GRANDE. Numa pump.fun de
+                 moedas com horas de vida, quase nada passa: numa hora de teste
+                 ela propos tres vezes e nao comprou uma. Um filtro que recusa
+                 tudo nao protege, so impede.
+
+   Os pisos ficam, baixos, com um papel so: garantir que exista ALGUMA saida
+   registrada antes de entrar. Quem decide de verdade e a proporcao logo acima.
+   Ajustaveis por .env sem tocar no codigo. */
+const n = (k, p) => { const v = Number(process.env[k]); return Number.isFinite(v) && v >= 0 ? v : p; };
+
+export function temSaida(x, {
+  minVendedores = n("RUG_MIN_VENDEDORES", 4),
+  minVendas = n("RUG_MIN_VENDAS", 6),
+  /* HOLDERS BAIXO DE PROPOSITO, e o motivo e uma contradicao que eu mesmo
+     escrevi: exigir MUITOS holders e exigir MUITAS vendas sao objetivos
+     opostos — quem vende deixa de ser holder. A moeda que ela quis comprar
+     tinha 95 compras, 44 vendas e 23 pessoas que sairam (proporcao saudavel) e
+     era recusada por ter "so" 37 holders: barrada exatamente porque gente
+     conseguiu sair. O piso aqui serve so contra concentracao EXTREMA — duas ou
+     tres carteiras segurando tudo. Quem julga saida e a proporcao. */
+  /* 40, por decisao do Michel (01/09/2026). Eu tinha baixado pra 15 depois de
+     notar que exigir muitos holders e exigir muitas vendas puxam pra lados
+     opostos — quem vende deixa de ser holder. Ele preferiu o lado conservador,
+     e o custo esta medido: uma moeda com 95 compras, 44 vendas e 37 holders
+     (proporcao saudavel) volta a ser recusada. Menos oportunidade, menos risco
+     de entrar em moeda concentrada. `RUG_MIN_HOLDERS` no .env muda sem tocar
+     no codigo. */
+  minHolders = n("RUG_MIN_HOLDERS", 40),
+  idadeHoras = null,
+} = {}) {
   const r = pareceRug(x, idadeHoras);
   if (r.rug)
     return { ok: false, motivo: `this has the shape of a rug — ${r.sinais.join("; ")}`, x };
   if (!x.leu) return { ok: false, motivo: "I could not read the numbers off this coin's page", x };
+
+  /* A PERGUNTA E PROPORCAO, NAO TAMANHO.
+     Uma moeda com 12 compras e 9 vendas e mais saudavel que uma com 400
+     compras e 12 vendas, e o piso absoluto reprovava a primeira e aprovava a
+     segunda. Aqui: das pessoas que entraram, quantas conseguiram sair? */
+  if (x.compradores >= 10 && x.vendedores < x.compradores * 0.12)
+    return { ok: false, motivo:
+      `${x.compradores} people bought and only ${x.vendedores} got out — that is a one-way door`, x };
+
   if (x.vendas < minVendas)
-    return { ok: false, motivo: `only ${x.vendas} sells on record — almost nobody has gotten out of here`, x };
+    return { ok: false, motivo: `only ${x.vendas} sells on record — nobody has left yet`, x };
   if (x.vendedores < minVendedores)
     return { ok: false, motivo: `only ${x.vendedores} people have sold — too few hands have made it out`, x };
   if (x.holders < minHolders)

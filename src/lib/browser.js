@@ -101,6 +101,18 @@ async function bbLaunch(key) {
   const session = await bbFetch("/sessions", {
     projectId: process.env.BROWSERBASE_PROJECT_ID,
     ...(ctxId ? { browserSettings: { context: { id: ctxId, persist: true } } } : {}),
+    /* PROXY RESIDENCIAL, so quando pedido. Ver o comentario no topo: o X barra
+       login vindo de datacenter. Custa por GB, entao nao vale ligar pra tudo —
+       a pump nunca reclamou. `BROWSERBASE_PROXY=1` liga. */
+    ...(process.env.BROWSERBASE_PROXY === "1" ? {
+      proxies: [{
+        type: "browserbase",
+        geolocation: { country: process.env.BROWSERBASE_PROXY_PAIS || "US" },
+      }],
+    } : {}),
+    /* Regiao: ver o comentario no topo do arquivo. Vazio = deixa o Browserbase
+       escolher (us-west-2), que do Brasil e a rota mais longa. */
+    ...(process.env.BROWSERBASE_REGION ? { region: process.env.BROWSERBASE_REGION } : {}),
   });
   const ws = session.connectUrl ??
     `wss://connect.browserbase.com?apiKey=${process.env.BROWSERBASE_API_KEY}&sessionId=${session.id}`;
@@ -359,7 +371,7 @@ async function gotoAndSettle(page, url) {
   // domcontentloaded + janela curta de rede ociosa, em vez de networkidle2:
   // pagina com websocket/grafico ao vivo NUNCA assenta e estourava os 25s de
   // timeout — cada leitura levava meio minuto e o show ficava lento.
-  const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 12000 });
+  const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: Number(process.env.NAV_TIMEOUT_MS) || 25000 });
   await page.waitForNetworkIdle({ idleTime: 500, timeout: 3500 }).catch(() => {});
   // Respiro curto para a SPA pintar o que acabou de chegar.
   await new Promise((r) => setTimeout(r, 600));
@@ -623,7 +635,7 @@ export async function searchPage(query, max = 8, { shotPath = null, key = SHARED
     // geolocaliza pelo IP (Brasil) e mistura resultado em portugues.
     await page.goto(`https://duckduckgo.com/?q=${encodeURIComponent(query)}&ia=web&kl=us-en`, {
       waitUntil: "domcontentloaded",
-      timeout: 12000,
+      timeout: Number(process.env.NAV_TIMEOUT_MS) || 25000,
     });
     await page.waitForSelector('a[data-testid="result-title-a"], a.result__a', { timeout: 6000 })
       .catch(() => {});
