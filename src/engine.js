@@ -689,10 +689,21 @@ const ESPELHO_TOKEN = process.env.ADMIN_TOKEN || "";
 let espelhoUltimo = 0;
 let espelhoAvisou = false;
 
+let espelhoAgendado = null;
+
 async function espelharNoSite() {
   if (!ESPELHO_URL || !ESPELHO_TOKEN) return;
   const agora = Date.now();
-  if (agora - espelhoUltimo < 5000) return;      // o site publico nao precisa de 60fps
+  /* AGENDA em vez de descartar. Ver o comentario acima: descartar deixava o
+     site preso no penultimo estado quando ela passava um tempo sem falar. */
+  if (agora - espelhoUltimo < 5000) {
+    if (espelhoAgendado) return;
+    espelhoAgendado = setTimeout(() => {
+      espelhoAgendado = null;
+      espelharNoSite();
+    }, 5000 - (agora - espelhoUltimo) + 100);
+    return;
+  }
   espelhoUltimo = agora;
   try {
     const r = await fetch(`${ESPELHO_URL}/api/estado-externo`, {
