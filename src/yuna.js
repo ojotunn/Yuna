@@ -641,6 +641,58 @@ const servidor = http.createServer(async (req, res) => {
     });
   }
 
+  /* QUEM ELA JA FOI. Publica, e de proposito: um agente que da pra ler
+     mudando de ideia sobre si mesmo nao existe em nenhum outro lugar.
+     Vai o motivo e o DIFF; o texto inteiro da persona nao — ela descreve as
+     proprias fraquezas la dentro, e o chat e publico. */
+  if (url.pathname === "/api/versoes") {
+    const dir = path.join(ROOT, "src", "data", "agents");
+    const hist = path.join(dir, "history");
+    const versoes = [];
+    try {
+      const arqs = fs.readdirSync(hist)
+        .filter((f) => /^yuna\.v\d+\.md$/.test(f))
+        .sort((a, b) => Number(a.match(/v(\d+)/)[1]) - Number(b.match(/v(\d+)/)[1]));
+
+      const linhas = (t) => String(t || "").split(/\r?\n/);
+      for (let i = 0; i < arqs.length; i++) {
+        const n = Number(arqs[i].match(/v(\d+)/)[1]);
+        const texto = (() => { try { return fs.readFileSync(path.join(hist, arqs[i]), "utf8"); } catch { return ""; } })();
+        /* O texto SEGUINTE e a proxima versao no historico, ou a persona viva
+           se esta for a ultima guardada. */
+        const proximo = i + 1 < arqs.length
+          ? (() => { try { return fs.readFileSync(path.join(hist, arqs[i + 1]), "utf8"); } catch { return ""; } })()
+          : (() => { try { return fs.readFileSync(path.join(dir, "yuna.md"), "utf8"); } catch { return ""; } })();
+
+        let porque = "", quando = null;
+        try {
+          const w = fs.readFileSync(path.join(hist, `yuna.v${n}.why.txt`), "utf8").split(/\r?\n/);
+          quando = w[0] || null;
+          porque = w.slice(1).join("\n").trim();
+        } catch { /* versao antiga sem motivo */ }
+
+        /* DIFF SIMPLES por linha: o que sumiu e o que apareceu. Nao e um diff
+           de verdade (sem deteccao de movimento), e nao precisa ser — o que
+           importa e a pessoa ver O QUE ela mudou em si. */
+        const antes = new Set(linhas(texto).map((l) => l.trim()).filter(Boolean));
+        const depois = new Set(linhas(proximo).map((l) => l.trim()).filter(Boolean));
+        const tirou = [...antes].filter((l) => !depois.has(l)).slice(0, 12);
+        const poz = [...depois].filter((l) => !antes.has(l)).slice(0, 12);
+
+        versoes.push({ de: n, para: n + 1, quando, porque, tirou, poz });
+      }
+    } catch { /* nunca se reescreveu: lista vazia, e o site diz isso */ }
+
+    let atual = 1;
+    try {
+      const c = JSON.parse(fs.readFileSync(
+        process.env.CHECKPOINT_FILE || path.join(ROOT, "src", "data", "checkpoint-yuna.json"), "utf8"));
+      atual = c.agents?.yuna?.personaVersion ?? (versoes.length + 1);
+    } catch { atual = versoes.length + 1; }
+
+    return enviar(res, 200, { atual, versoes: versoes.reverse() });
+  }
+
   /* ===================== O PAINEL DO X =====================
      O X barrou o login automatizado (deteccao de navegador, nao de conta nem
      de IP — o Michel confirmou deslogando do Chrome dele e religando). Entao

@@ -126,6 +126,42 @@
              text-transform: uppercase; margin-right: 7px; color: #2e7d32; }
 
   /* a store: telas soltas no workspace, como no app */
+  /* AS DUAS SECOES NOVAS. Mesma linguagem do resto: sem arredondar nada,
+     Consolas nos detalhes, e o texto dela com respiro pra ser lido. */
+  .item {
+    padding: 16px 20px; border-bottom: 1px solid #ededed;
+  }
+  .item:last-child { border-bottom: 0; }
+  .item .quando {
+    font-family: Consolas, monospace; font-size: 11px; color: #999;
+    letter-spacing: .04em;
+  }
+  .item .fala {
+    margin: 7px 0 0; font-size: 15px; line-height: 1.5; color: #222;
+  }
+  .item .resposta {
+    margin: 9px 0 0; padding-left: 12px; border-left: 3px solid #d6d6d6;
+    font-size: 13.5px; line-height: 1.5; color: #666;
+  }
+  .selo {
+    font-family: Consolas, monospace; font-size: 10.5px; letter-spacing: .06em;
+    padding: 2px 7px; border: 1px solid; margin-left: 9px; white-space: nowrap;
+  }
+  .selo.sim { color: #2e7d32; border-color: #a6cfa8; background: #eef7ef; }
+  .selo.nao { color: #a02020; border-color: #d9b0b0; background: #faf0f0; }
+  /* o diff das versoes dela */
+  .dif {
+    margin-top: 10px; font-family: Consolas, monospace; font-size: 12px;
+    line-height: 1.6; background: #fafafa; border: 1px solid #ededed;
+    padding: 10px 12px; overflow-x: auto;
+  }
+  .dif div { white-space: pre-wrap; word-break: break-word; }
+  .dif .out { color: #a02020; }
+  .dif .in  { color: #2e7d32; }
+  .item .versao {
+    font-family: Consolas, monospace; font-size: 12px; color: #444; font-weight: 600;
+  }
+
   #grade {
     display: grid; gap: 30px 24px; padding: 20px;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -234,6 +270,19 @@
       nothing has dried yet — the piece hangs here the moment she puts the
       board down.
     </div>
+  </div>
+
+  <!-- O QUE ELA PEDIU. Aparece so quando ha resposta: secao vazia promete e
+       nao entrega. -->
+  <div class="caixa" id="cx-pedidos" style="display:none">
+    <h2>asked for <span class="sel" id="sel-pedidos"></span></h2>
+    <div id="pedidos"></div>
+  </div>
+
+  <!-- QUEM ELA JA FOI. Idem: so existe depois da primeira reescrita. -->
+  <div class="caixa" id="cx-versoes" style="display:none">
+    <h2>versions of her <span class="sel" id="sel-versoes"></span></h2>
+    <div id="versoes"></div>
   </div>
 </main>
 
@@ -353,6 +402,121 @@ function titulo(tema) {
   let t = String(tema || "untitled").split(",")[0].trim();
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
+
+/* ---------------------------------------------------------------------
+   O QUE ELA PEDIU. Ela sabe que a lista de acoes dela e finita e escrita por
+   outra pessoa; `ask` e o que ela faz com isso. Aqui aparece o que foi
+   construido E o que foi recusado, com o motivo — a recusa e a metade mais
+   interessante, e a rota exige motivo justamente pra ela existir aqui.
+   --------------------------------------------------------------------- */
+const quandoTxt = (t) => new Date(t).toLocaleDateString("en-US",
+  { day: "numeric", month: "short", year: "numeric" });
+
+fetch("/api/pedidos", { cache: "no-store" })
+  .then((r) => r.json())
+  .then((d) => {
+    const lista = d.respondidos || [];
+    if (!lista.length) return;                 // nada respondido: secao nem existe
+    const cx = document.getElementById("pedidos");
+    for (const q of lista) {
+      const it = document.createElement("div");
+      it.className = "item";
+
+      const topo = document.createElement("div");
+      const w = document.createElement("span");
+      w.className = "quando";
+      w.textContent = quandoTxt(q.t);
+      topo.appendChild(w);
+      const selo = document.createElement("span");
+      const sim = q.estado === "aceito";
+      selo.className = "selo " + (sim ? "sim" : "nao");
+      selo.textContent = sim ? "BUILT" : "NOT BUILT";
+      topo.appendChild(selo);
+      it.appendChild(topo);
+
+      const fala = document.createElement("p");
+      fala.className = "fala";
+      fala.textContent = q.oQue || "";          // texto dela: nunca innerHTML
+      it.appendChild(fala);
+
+      if (q.porque) {
+        const p = document.createElement("p");
+        p.className = "resposta";
+        p.textContent = "her reason: " + q.porque;
+        it.appendChild(p);
+      }
+      if (q.resposta) {
+        const p = document.createElement("p");
+        p.className = "resposta";
+        p.textContent = (sim ? "the answer: " : "why not: ") + q.resposta;
+        it.appendChild(p);
+      }
+      cx.appendChild(it);
+    }
+    document.getElementById("sel-pedidos").textContent =
+      lista.length + (lista.length === 1 ? " request" : " requests");
+    document.getElementById("cx-pedidos").style.display = "";
+  })
+  .catch(() => {});
+
+/* ---------------------------------------------------------------------
+   QUEM ELA JA FOI. Ela reescreve a propria persona quando o dia muda alguma
+   coisa nela, e cada versao fica guardada com o motivo. Isto e a coisa mais
+   incomum do projeto e ficava num diretorio que ninguem via.
+   O texto inteiro da persona nao vem — so o diff. Ela descreve as proprias
+   fraquezas la dentro, e o chat da live e publico.
+   --------------------------------------------------------------------- */
+fetch("/api/versoes", { cache: "no-store" })
+  .then((r) => r.json())
+  .then((d) => {
+    const lista = (d.versoes || []).filter((v) => v.porque || v.tirou.length || v.poz.length);
+    if (!lista.length) return;                 // nunca se reescreveu ainda
+    const cx = document.getElementById("versoes");
+    for (const v of lista) {
+      const it = document.createElement("div");
+      it.className = "item";
+
+      const topo = document.createElement("div");
+      const ver = document.createElement("span");
+      ver.className = "versao";
+      ver.textContent = "v" + v.de + " \u2192 v" + v.para;
+      topo.appendChild(ver);
+      if (v.quando) {
+        const w = document.createElement("span");
+        w.className = "quando";
+        w.textContent = "  " + quandoTxt(v.quando);
+        topo.appendChild(w);
+      }
+      it.appendChild(topo);
+
+      if (v.porque) {
+        const p = document.createElement("p");
+        p.className = "fala";
+        p.textContent = v.porque;              // o motivo dela, com as palavras dela
+        it.appendChild(p);
+      }
+
+      if (v.tirou.length || v.poz.length) {
+        const dif = document.createElement("div");
+        dif.className = "dif";
+        for (const l of v.tirou) {
+          const e = document.createElement("div");
+          e.className = "out"; e.textContent = "- " + l;
+          dif.appendChild(e);
+        }
+        for (const l of v.poz) {
+          const e = document.createElement("div");
+          e.className = "in"; e.textContent = "+ " + l;
+          dif.appendChild(e);
+        }
+        it.appendChild(dif);
+      }
+      cx.appendChild(it);
+    }
+    document.getElementById("sel-versoes").textContent = "now on v" + (d.atual || 1);
+    document.getElementById("cx-versoes").style.display = "";
+  })
+  .catch(() => {});
 
 fetch("/api/obras", { cache: "no-store" })
   .then((r) => r.json())
