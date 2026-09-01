@@ -38,6 +38,9 @@ const TELA = path.join(ROOT, "public", "yuna-live.html");
 /* O ACERVO mora na maquina que desenha (a GPU e local). No Railway a
    pasta simplesmente nao existe e a store aparece vazia — que e o
    comportamento certo, e nao um erro. */
+/* As imagens que viajam no deploy (junto das gravacoes). A obra so
+   APARECE na store depois de pintada — ver /api/obras. */
+const GRAVACOES = process.env.GRAVACOES_DIR || path.join(ROOT, "gravacoes");
 const ACERVO = process.env.ACERVO_DIR ||
   "C:/Higgsfield Games/atelier/acervo/yuna";
 const ESTADO = process.env.STATE_FILE || path.join(ROOT, "src", "data", "state-yuna.json");
@@ -114,15 +117,31 @@ const servidor = http.createServer(async (req, res) => {
   /* O ACERVO: o que ela ja desenhou, mais novo primeiro. E a mesma pasta que
      o motor grava quando ela larga a prancheta. */
   if (url.pathname === "/api/obras") {
+    /* 1. o acervo LOCAL — a maquina que desenha tem as fichas em disco */
     let obras = [];
     try {
       obras = fs.readdirSync(ACERVO)
-        .filter((f) => f.endsWith(".json"))
+        .filter((f) => f.endsWith(".json") && !f.startsWith("_"))
         .map((f) => { try { return JSON.parse(fs.readFileSync(path.join(ACERVO, f), "utf8")); }
                       catch { return null; } })
-        .filter((o) => o && o.arquivo && fs.existsSync(path.join(ACERVO, o.arquivo)))
-        .sort((a, b) => String(b.dia).localeCompare(String(a.dia)));
-    } catch { /* sem acervo ainda */ }
+        .filter((o) => o && o.arquivo && fs.existsSync(path.join(ACERVO, o.arquivo)));
+    } catch { /* sem acervo aqui — normal no Railway */ }
+
+    /* 2. o que ela PINTOU AO VIVO, vindo do espelho.
+       So entra na vitrine o que aconteceu na frente de alguem: os arquivos das
+       15 viajam no deploy (ela precisa deles pra reproduzir, e o NFT precisa da
+       imagem existindo), mas a store nao e catalogo de estoque. */
+    try {
+      const feitas = (estadoDeCasa?.estado?.agents?.yuna?.obrasFeitas) || [];
+      const jaTem = new Set(obras.map((o) => o.arquivo));
+      for (const f of feitas) {
+        if (!f || !f.arquivo || jaTem.has(f.arquivo)) continue;
+        const img = path.join(GRAVACOES, f.arquivo);
+        if (fs.existsSync(img)) obras.push(f);
+      }
+    } catch { /* sem espelho: mostra so o acervo local */ }
+
+    obras.sort((a, b) => String(b.dia).localeCompare(String(a.dia)));
     return enviar(res, 200, { obras });
   }
 
@@ -130,7 +149,10 @@ const servidor = http.createServer(async (req, res) => {
      arquivo fora do acervo. */
   if (url.pathname.startsWith("/obras/")) {
     const nome = path.basename(decodeURIComponent(url.pathname.slice(7)));
-    const arq = path.join(ACERVO, nome);
+    /* Procura no acervo (maquina que desenha) E no deploy (onde as 15 viajam).
+       A ordem importa: o acervo tem a obra em resolucao cheia. */
+    let arq = path.join(ACERVO, nome);
+    if (!fs.existsSync(arq)) arq = path.join(GRAVACOES, nome);
     if (!nome.endsWith(".png") || !fs.existsSync(arq))
       return enviar(res, 404, { erro: "obra nao encontrada" });
     res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=3600" });

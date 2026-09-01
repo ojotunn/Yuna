@@ -2165,6 +2165,16 @@ async function apply(agent, action) {
           }
         } catch { /* preco e detalhe: nao derruba a hora do desenho */ }
 
+        /* A LISTA DO QUE ELA PINTOU AO VIVO. Viaja no espelho e e o que
+           autoriza a obra a aparecer na store: os arquivos das 15 estao no
+           deploy desde sempre, mas a vitrine so mostra o que aconteceu na
+           frente de alguem. */
+        agent.obrasFeitas = [
+          ...(agent.obrasFeitas || []).filter((o) => o.nome !== r.nome),
+          { nome: r.nome, arquivo: `${r.nome}.png`, tema: oQue,
+            dia: state.day, precoSol, quando: Date.now() },
+        ].slice(-60);
+
         emit("did", agent.id,
           `finished a piece — ${trim(oQue, 70)}${precoSol ? ` · ${precoSol} SOL` : ""}`,
           { obra: r.nome, precoSol });
