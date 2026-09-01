@@ -79,6 +79,7 @@ const ACTION_SCHEMA = {
         "type", "remark", "reason", "query", "to", "text", "venue", "market", "side",
         "sizeUsd", "conviction", "thesis", "invalidation", "proposalId",
         "evidence", "positionId", "lesson", "personaText", "why", "place",
+        "price",
       ],
       properties: {
         /* ONDE, no quarto, ela vai fazer isso. String simples de proposito: o
@@ -89,6 +90,17 @@ const ACTION_SCHEMA = {
           description:
             "Where in the room you do this: mesa (PC desk), sofa (couch), " +
             "puff (beanbag), cafe (kitchen), pesinhos (dumbbells). The bed is for sleeping only.",
+        },
+        /* QUANTO VALE A OBRA, em SOL. String simples pelo mesmo motivo que
+           `place`: o teto de 16 campos com union ja esta cheio, e numero
+           escrito como texto atravessa igual (`precoDaObra` faz Number()).
+           Sem este campo o prompt pedia o preco, o engine lia `action.price`
+           e recebia undefined — toda obra saia pelo piso de 1.5 SOL. */
+        price: {
+          type: "string",
+          description:
+            "Only for `draw`, when the piece is finished: what it is worth in SOL, " +
+            "between 1.5 and 10, as a number in text (e.g. \"4.5\"). Empty otherwise.",
         },
         type: {
           type: "string",
@@ -109,6 +121,11 @@ const ACTION_SCHEMA = {
             "object",
             "execute",
             "close",
+            // A CALL. Estava no menu do prompt e tinha case no engine, mas
+            // faltava aqui — entao toda vez que ela escolhia chamar uma moeda
+            // a API recusava a resposta inteira e o turno virava erro. Reusa
+            // `market` (a moeda) e `thesis` (por que). Enum e de graca.
+            "callout",
             "lend",
             // `pay` nao acrescenta campo nenhum ao schema — reusa sizeUsd e
             // reason. Valor de enum e de graca; propriedade com union e que

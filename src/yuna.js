@@ -385,12 +385,114 @@ const servidor = http.createServer(async (req, res) => {
     return;
   }
 
+  /* ===================== O PAINEL DO X =====================
+     O X barrou o login automatizado (deteccao de navegador, nao de conta nem
+     de IP — o Michel confirmou deslogando do Chrome dele e religando). Entao
+     ela escreve e ele publica.
+
+     ORDEM IMPORTA: o metodo e checado, e o POST vem antes do GET, porque 16
+     das 22 rotas deste arquivo nao olham req.method e um GET solto engoliria
+     o POST. E tudo isto tem que ficar acima do coringa estatico. */
+
+  /* O QUE O MICHEL FEZ. Escreve num arquivo proprio, que o motor le no ciclo
+     seguinte — o servidor NUNCA escreve no checkpoint (um escritor por
+     arquivo; o motor reescreve o checkpoint inteiro a cada ~700ms e apagaria
+     qualquer marca posta por fora). */
+  if (url.pathname === "/api/x" && req.method === "POST") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    let corpo = "";
+    for await (const pedaco of req) { corpo += pedaco; if (corpo.length > 20000) break; }
+    let dado = {};
+    try { dado = JSON.parse(corpo || "{}"); } catch { return enviar(res, 400, { erro: "corpo torto" }); }
+
+    const tipo = String(dado.tipo || "");
+    if (!["postei", "descartar", "comentario"].includes(tipo))
+      return enviar(res, 400, { erro: "tipo tem que ser postei, descartar ou comentario" });
+    if (tipo === "comentario" && !String(dado.texto || "").trim())
+      return enviar(res, 400, { erro: "comentario vazio" });
+    if (tipo !== "comentario" && !String(dado.post || "").trim())
+      return enviar(res, 400, { erro: "falta o id do post" });
+
+    const arq = process.env.X_ACOES_FILE || path.join(ROOT, "src", "data", "x-acoes.json");
+    try {
+      let acoes = [];
+      try { acoes = JSON.parse(fs.readFileSync(arq, "utf8"))?.acoes ?? []; } catch { /* primeiro uso */ }
+      /* ID unico: o motor deduplica por ele, senao todo restart reprocessaria
+         a lista inteira e ela receberia os mesmos comentarios de novo. */
+      const id = `x${Date.now().toString(36)}${acoes.length.toString(36)}`;
+      acoes.push({
+        id, tipo, quando: Date.now(),
+        ...(dado.post ? { post: String(dado.post).slice(0, 40) } : {}),
+        ...(dado.porque ? { porque: String(dado.porque).slice(0, 200) } : {}),
+        ...(dado.de ? { de: String(dado.de).slice(0, 40) } : {}),
+        ...(dado.texto ? { texto: String(dado.texto).slice(0, 500) } : {}),
+      });
+      /* Poda: o motor ja lembra o que aplicou (state.xVistas), entao a cauda
+         deste arquivo nao serve pra nada alem de crescer. */
+      if (acoes.length > 300) acoes = acoes.slice(-150);
+      fs.mkdirSync(path.dirname(arq), { recursive: true });
+      fs.writeFileSync(arq, JSON.stringify({ acoes }, null, 2));
+      return enviar(res, 200, { ok: true, id, vale: "no proximo turno dela" });
+    } catch (e) {
+      return enviar(res, 500, { erro: String(e.message).slice(0, 120) });
+    }
+  }
+
+  /* A FILA. Lida do CHECKPOINT, que e a fonte de verdade e mora no volume —
+     o snapshot de apresentacao serve, mas some no restart. Servidor le, motor
+     escreve. */
+  if (url.pathname === "/api/x") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    const chk = process.env.CHECKPOINT_FILE || path.join(ROOT, "src", "data", "checkpoint-yuna.json");
+    let posts = [], comentarios = [];
+    try {
+      const c = JSON.parse(fs.readFileSync(chk, "utf8"));
+      posts = Array.isArray(c.posts) ? c.posts : [];
+      comentarios = Array.isArray(c.xComentarios) ? c.xComentarios : [];
+    } catch {
+      /* Sem checkpoint (deploy novo, volume vazio) a fila esta vazia — nao e
+         erro. Tenta o espelho de casa antes de desistir. */
+      const esp = estadoDeCasa?.estado ?? null;
+      if (esp) { posts = esp.posts ?? []; comentarios = esp.xComentarios ?? []; }
+    }
+    return enviar(res, 200, {
+      pendentes: posts.filter((p) => !p.sent && !p.descartado).sort((a, b) => b.t - a.t),
+      historico: posts.filter((p) => p.sent || p.descartado).sort((a, b) => b.t - a.t).slice(0, 40),
+      comentarios: comentarios.slice(-20).reverse(),
+      ligado: process.env.X_ENABLED === "1",
+      conta: process.env.X_URL || "",
+    });
+  }
+
+  /* A CASCA DO PAINEL. Sem dado dentro de proposito: o header do token nao
+     existe quando o Michel digita a URL, entao a pagina pede o token e guarda
+     no navegador dele. Os DADOS e que exigem o token, acima. */
+  if (url.pathname === "/x") {
+    const arq = path.join(ROOT, "public", "x.html");
+    if (!fs.existsSync(arq)) return enviar(res, 404, { erro: "painel nao instalado" });
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate",
+    });
+    return res.end(fs.readFileSync(arq));
+  }
+
   // Arquivos soltos de public/ (imagens que a tela venha a pedir).
   const alvo = path.join(ROOT, "public", url.pathname.replace(/^\/+/, ""));
   if (alvo.startsWith(path.join(ROOT, "public")) && fs.existsSync(alvo) && fs.statSync(alvo).isFile()) {
     const tipo = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
-                   ".png": "image/png", ".jpg": "image/jpeg", ".json": "application/json" }[path.extname(alvo)];
-    res.writeHead(200, { "content-type": (tipo || "application/octet-stream") + "; charset=utf-8" });
+                   ".png": "image/png", ".jpg": "image/jpeg", ".json": "application/json",
+                   ".ico": "image/x-icon", ".svg": "image/svg+xml", ".webp": "image/webp",
+                   ".woff2": "font/woff2" }[path.extname(alvo)];
+    /* charset so em texto: numa imagem e ruido, e em .ico chega a atrapalhar. */
+    const texto = /^(text\/|application\/(json|javascript)|image\/svg)/.test(tipo || "");
+    res.writeHead(200, {
+      "content-type": (tipo || "application/octet-stream") + (texto ? "; charset=utf-8" : ""),
+    });
     return res.end(fs.readFileSync(alvo));
   }
 

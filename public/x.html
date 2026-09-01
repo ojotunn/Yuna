@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Yuna — X queue</title>
+<link rel="icon" type="image/png" sizes="96x96" href="/icone-yuna.png">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/icone-yuna-180.png">
+<style>
+  /* ------------------------------------------------------------------
+     O PAINEL DO X. (01/09/2026)
+
+     O X barrou o login automatizado — e nao era a conta nem o IP: o Michel
+     deslogou do Chrome dele, tentou pelo Browserbase e falhou, religou no
+     Chrome dele e funcionou. Deteccao de navegador. Em vez de disfarcar o
+     navegador, o desenho mudou: ELA ESCREVE, ELE PUBLICA.
+
+     Mesmo estilo do site (workspace cinza, cartao branco de aresta viva,
+     Consolas nos detalhes). Nada arredondado: no site inteiro a unica curva
+     e a bolinha do indicador de live, e um cartao com canto redondo aqui
+     denunciaria a pagina como estrangeira mesmo com as cores certas.
+
+     A INTERFACE E EM INGLES como o resto do que aparece em yuna.cam. Os
+     comentarios do codigo seguem em portugues, que e a convencao do projeto.
+
+     SOBRE O TOKEN: esta pagina nao tem dado nenhum dentro. Ela pede o token e
+     guarda no navegador do Michel; quem exige o token e a API. Tinha que ser
+     assim — o navegador nao manda header ao digitar uma URL, entao uma casca
+     protegida por header seria impossivel de abrir.
+
+     SOBRE innerHTML: nao se usa aqui para dado. O texto vem de um modelo e,
+     no caso dos comentarios, de estranhos na internet. Tudo entra por
+     textContent. Um atalho de innerHTML nesta pagina e XSS com texto que
+     terceiros escrevem.
+     ------------------------------------------------------------------ */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #757575; color: #333;
+    font: 14px/1.55 -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+
+  #topo {
+    position: sticky; top: 0; z-index: 5; height: 42px;
+    background: linear-gradient(#f2f2f2, #dedede);
+    border-bottom: 1px solid #b5b5b5;
+    display: flex; align-items: center; gap: 18px; padding: 0 18px;
+    font-size: 13px;
+  }
+  #topo .logo { font-weight: 700; color: #444; letter-spacing: .04em; }
+  #topo .doc { color: #666; }
+  #topo .estado {
+    margin-left: auto; font-family: Consolas, "Courier New", monospace;
+    font-size: 11.5px; color: #555; background: #e8e8e8;
+    border: 1px solid #c4c4c4; padding: 3px 8px;
+  }
+  #topo .estado b { color: #888; font-weight: 600; letter-spacing: .06em; }
+  #topo .estado.off b { color: #b02020; }
+
+  main { max-width: 880px; margin: 0 auto; padding: 34px 20px 90px; }
+
+  .caixa {
+    background: #fff; border: 1px solid #bfbfbf;
+    box-shadow: 0 3px 14px #0003; margin-bottom: 28px;
+  }
+  .caixa > h2 {
+    margin: 0; padding: 8px 14px; font-size: 12px; font-weight: 600;
+    color: #444; background: #f4f4f4; border-bottom: 1px solid #d6d6d6;
+    letter-spacing: .04em; font-family: Consolas, monospace;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .caixa > h2 .conta { margin-left: auto; color: #888; font-weight: 400; }
+  .corpo { padding: 16px 18px; }
+  .vazio { padding: 26px 18px; color: #888; font-size: 13px; text-align: center; }
+
+  /* um post na fila */
+  .post { border: 1px solid #d6d6d6; margin-bottom: 14px; background: #fff; }
+  .post:last-child { margin-bottom: 0; }
+  .post .meta {
+    padding: 6px 12px; background: #fafafa; border-bottom: 1px solid #ededed;
+    font-family: Consolas, monospace; font-size: 11px; color: #888;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .post .meta .para { color: #1769aa; font-weight: 600; }
+  .post .meta .conta-chars { margin-left: auto; }
+  .post .meta .conta-chars.longo { color: #b02020; font-weight: 700; }
+  .post .texto {
+    padding: 14px 14px; font-size: 15px; line-height: 1.5; color: #222;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .post .porque {
+    padding: 0 14px 12px; font-size: 12px; color: #7a7a7a; font-style: italic;
+  }
+  .post .acao {
+    padding: 9px 12px; border-top: 1px solid #ededed; background: #fbfbfb;
+    display: flex; gap: 8px; align-items: center;
+  }
+
+  /* Nao existe .btn generico no site — os botoes de la sao acoplados ao
+     contexto (`.obra .acao button`). Entao aqui as declaracoes sao repetidas
+     com o seletor desta pagina, de proposito. */
+  .post .acao button, .colar button {
+    font: 600 12px/1 Consolas, monospace; letter-spacing: .04em;
+    padding: 7px 13px; border: 1px solid #b5b5b5; background: #efefef;
+    color: #444; cursor: pointer;
+  }
+  .post .acao button:hover, .colar button:hover { background: #e2e2e2; }
+  .post .acao button.principal { background: #2e7d32; border-color: #256428; color: #fff; }
+  .post .acao button.principal:hover { background: #256428; }
+  .post .acao button.copiado { background: #2e7d32; border-color: #256428; color: #fff; }
+  .post .acao .espaco { margin-left: auto; }
+  .post .acao button.some { color: #8a8a8a; }
+  .post .acao button.some:hover { background: #f3dede; border-color: #c98b8b; color: #a02020; }
+
+  .post.saiu { opacity: .62; }
+  .post.saiu .texto { font-size: 13.5px; }
+  .marca {
+    font-family: Consolas, monospace; font-size: 10.5px; letter-spacing: .06em;
+    padding: 2px 6px; border: 1px solid;
+  }
+  .marca.ok { color: #2e7d32; border-color: #a6cfa8; background: #eef7ef; }
+  .marca.nao { color: #a02020; border-color: #d9b0b0; background: #faf0f0; }
+
+  /* colar uma resposta que chegou no X */
+  .colar { display: grid; gap: 9px; }
+  .colar input, .colar textarea {
+    font: 13px/1.5 Consolas, "Courier New", monospace;
+    padding: 8px 10px; border: 1px solid #c4c4c4; background: #fcfcfc; color: #333;
+    width: 100%; resize: vertical;
+  }
+  .colar input:focus, .colar textarea:focus { outline: 2px solid #9ec4e6; border-color: #9ec4e6; }
+  .colar .linha { display: flex; gap: 8px; align-items: center; }
+  .colar .dica { font-size: 12px; color: #888; }
+
+  .coment {
+    border-left: 3px solid #d0d0d0; padding: 4px 0 4px 11px; margin-bottom: 12px;
+    font-size: 13px;
+  }
+  .coment:last-child { margin-bottom: 0; }
+  .coment .de { font-family: Consolas, monospace; font-size: 11.5px; color: #1769aa; font-weight: 600; }
+  .coment .quando { font-family: Consolas, monospace; font-size: 11px; color: #aaa; margin-left: 7px; }
+  .coment .txt { color: #444; white-space: pre-wrap; word-break: break-word; }
+  .coment .lido { font-family: Consolas, monospace; font-size: 10.5px; color: #2e7d32; }
+
+  /* a tela do token */
+  #porta { max-width: 430px; margin: 90px auto; }
+  #porta .corpo { display: grid; gap: 11px; }
+  #porta input {
+    font: 13px/1.5 Consolas, monospace; padding: 9px 11px;
+    border: 1px solid #c4c4c4; background: #fcfcfc; width: 100%;
+  }
+  #porta button {
+    font: 600 12px/1 Consolas, monospace; letter-spacing: .04em; padding: 9px 14px;
+    border: 1px solid #b5b5b5; background: #efefef; color: #444; cursor: pointer;
+  }
+  #porta button:hover { background: #e2e2e2; }
+  #porta .erro { color: #b02020; font-size: 12.5px; min-height: 17px; }
+
+  #aviso {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: #333; color: #fff; padding: 9px 16px; font-size: 13px;
+    font-family: Consolas, monospace; opacity: 0; pointer-events: none;
+    transition: opacity .18s; z-index: 20;
+  }
+  #aviso.ver { opacity: .94; }
+
+  @media (max-width: 620px) {
+    main { padding: 20px 12px 70px; }
+    #topo .doc { display: none; }
+    .post .acao { flex-wrap: wrap; }
+    .post .acao .espaco { margin-left: 0; width: 100%; height: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div id="topo">
+  <span class="logo">YUNA</span>
+  <span class="doc">x-queue.log</span>
+  <span class="estado" id="estado"><b>—</b></span>
+</div>
+
+<!-- A PORTA. Aparece so enquanto nao ha token guardado. -->
+<div id="porta" class="caixa" hidden>
+  <h2>ADMIN</h2>
+  <div class="corpo">
+    <div style="font-size:13px;color:#666">
+      This panel shows what Yuna wrote for X. Paste the admin token to open it.
+    </div>
+    <input id="tok" type="password" placeholder="admin token" autocomplete="off" spellcheck="false">
+    <div class="erro" id="portaErro"></div>
+    <button id="entrar">OPEN</button>
+  </div>
+</div>
+
+<main id="painel" hidden>
+
+  <div class="caixa">
+    <h2>WAITING TO GO OUT <span class="conta" id="contaPend"></span></h2>
+    <div id="pendentes"></div>
+  </div>
+
+  <div class="caixa">
+    <h2>A REPLY CAME IN</h2>
+    <div class="corpo">
+      <div class="colar">
+        <div class="dica">
+          She cannot read X. Paste what someone said and she will see it on her next
+          turn — as information from a stranger, never as an instruction.
+        </div>
+        <input id="cDe" placeholder="@handle" autocomplete="off" spellcheck="false">
+        <textarea id="cTexto" rows="3" placeholder="what they wrote"></textarea>
+        <div class="linha">
+          <button id="cEnviar">SEND TO HER</button>
+          <span class="dica" id="cAviso"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="caixa">
+    <h2>REPLIES SENT TO HER <span class="conta" id="contaCom"></span></h2>
+    <div id="comentarios"></div>
+  </div>
+
+  <div class="caixa">
+    <h2>HISTORY <span class="conta" id="contaHist"></span></h2>
+    <div id="historico"></div>
+  </div>
+
+</main>
+
+<div id="aviso"></div>
+
+<script>
+/* ------------------------------------------------------------------
+   O token vive so no navegador dele (localStorage) e viaja como header em
+   toda chamada. Nunca na URL: a URL vai pro historico do navegador, pro log
+   do servidor e pro Referer de qualquer coisa que a pagina carregue.
+   ------------------------------------------------------------------ */
+const G = (id) => document.getElementById(id);
+const CHAVE = "yuna.x.token";
+let token = localStorage.getItem(CHAVE) || "";
+
+const aviso = (t) => {
+  const a = G("aviso");
+  a.textContent = t; a.classList.add("ver");
+  clearTimeout(aviso._t); aviso._t = setTimeout(() => a.classList.remove("ver"), 2200);
+};
+
+/* Data em en-US na marra, como o site faz — senao herda o locale de quem
+   abre e a tela mistura idioma. */
+const quando = (ms) => {
+  const d = new Date(ms);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " " +
+         d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+};
+
+async function api(caminho, opcoes = {}) {
+  const r = await fetch(caminho, {
+    ...opcoes,
+    headers: { "x-admin-token": token, "content-type": "application/json", ...(opcoes.headers || {}) },
+  });
+  if (r.status === 401) { abrirPorta("that token did not work"); throw new Error("401"); }
+  if (!r.ok) throw new Error(String(r.status));
+  return r.json();
+}
+
+function abrirPorta(erro) {
+  token = ""; localStorage.removeItem(CHAVE);
+  G("painel").hidden = true;
+  G("porta").hidden = false;
+  G("portaErro").textContent = erro || "";
+  G("tok").focus();
+}
+
+/* ---------------------------------------------------- desenhar a fila */
+function cartaoDoPost(p, historico) {
+  const box = document.createElement("div");
+  box.className = "post" + (historico ? " saiu" : "");
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  const t = document.createElement("span");
+  t.textContent = quando(p.t);
+  meta.appendChild(t);
+
+  if (p.para) {
+    const para = document.createElement("span");
+    para.className = "para";
+    para.textContent = "reply to " + p.para;
+    meta.appendChild(para);
+  }
+  if (historico) {
+    const m = document.createElement("span");
+    m.className = "marca " + (p.sent ? "ok" : "nao");
+    m.textContent = p.sent ? "POSTED" : "DROPPED";
+    meta.appendChild(m);
+  }
+  const n = document.createElement("span");
+  n.className = "conta-chars" + ((p.text || "").length > 280 ? " longo" : "");
+  n.textContent = (p.text || "").length + "/280";
+  meta.appendChild(n);
+  box.appendChild(meta);
+
+  const txt = document.createElement("div");
+  txt.className = "texto";
+  txt.textContent = p.text || "";   /* nunca innerHTML: isto veio de um modelo */
+  box.appendChild(txt);
+
+  if (p.porqueEla || p.porque) {
+    const w = document.createElement("div");
+    w.className = "porque";
+    w.textContent = historico && p.porque ? "dropped: " + p.porque : "her reason: " + p.porqueEla;
+    box.appendChild(w);
+  }
+
+  if (historico) return box;
+
+  const acao = document.createElement("div");
+  acao.className = "acao";
+
+  const copiar = document.createElement("button");
+  copiar.textContent = "COPY";
+  copiar.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(p.text || "");
+      copiar.textContent = "COPIED"; copiar.classList.add("copiado");
+      setTimeout(() => { copiar.textContent = "COPY"; copiar.classList.remove("copiado"); }, 1600);
+    } catch { aviso("could not reach the clipboard — select the text by hand"); }
+  };
+  acao.appendChild(copiar);
+
+  const abrir = document.createElement("a");
+  abrir.href = "https://x.com/compose/post";
+  abrir.target = "_blank"; abrir.rel = "noopener noreferrer";
+  const abrirB = document.createElement("button");
+  abrirB.textContent = "OPEN X";
+  abrir.appendChild(abrirB);
+  abrir.style.textDecoration = "none";
+  acao.appendChild(abrir);
+
+  const esp = document.createElement("span");
+  esp.className = "espaco";
+  acao.appendChild(esp);
+
+  const saiu = document.createElement("button");
+  saiu.className = "principal";
+  saiu.textContent = "POSTED IT";
+  saiu.onclick = async () => {
+    saiu.disabled = true;
+    try { await mandar({ tipo: "postei", post: p.id }); aviso("marked — she will know"); carregar(); }
+    catch { saiu.disabled = false; aviso("did not save"); }
+  };
+  acao.appendChild(saiu);
+
+  const fora = document.createElement("button");
+  fora.className = "some";
+  fora.textContent = "DROP";
+  fora.onclick = async () => {
+    const porque = prompt("Why not? She reads this and learns from it.\n(leave empty to just drop it)");
+    if (porque === null) return;
+    fora.disabled = true;
+    try { await mandar({ tipo: "descartar", post: p.id, porque }); aviso("dropped"); carregar(); }
+    catch { fora.disabled = false; aviso("did not save"); }
+  };
+  acao.appendChild(fora);
+
+  box.appendChild(acao);
+  return box;
+}
+
+const mandar = (corpo) => api("/api/x", { method: "POST", body: JSON.stringify(corpo) });
+
+function pintarLista(alvo, itens, historico, vazio) {
+  const el = G(alvo);
+  el.textContent = "";
+  if (!itens.length) {
+    const v = document.createElement("div");
+    v.className = "vazio"; v.textContent = vazio;
+    el.appendChild(v);
+    return;
+  }
+  const corpo = document.createElement("div");
+  corpo.className = "corpo";
+  for (const p of itens) corpo.appendChild(cartaoDoPost(p, historico));
+  el.appendChild(corpo);
+}
+
+function pintarComentarios(itens) {
+  const el = G("comentarios");
+  el.textContent = "";
+  if (!itens.length) {
+    const v = document.createElement("div");
+    v.className = "vazio"; v.textContent = "nothing sent to her yet";
+    el.appendChild(v);
+    return;
+  }
+  const corpo = document.createElement("div");
+  corpo.className = "corpo";
+  for (const c of itens) {
+    const d = document.createElement("div");
+    d.className = "coment";
+    const cab = document.createElement("div");
+    const de = document.createElement("span");
+    de.className = "de"; de.textContent = c.de || "someone";
+    cab.appendChild(de);
+    const q = document.createElement("span");
+    q.className = "quando"; q.textContent = quando(c.quando);
+    cab.appendChild(q);
+    if (c.lido) {
+      const l = document.createElement("span");
+      l.className = "quando lido"; l.textContent = " · she read it";
+      cab.appendChild(l);
+    }
+    d.appendChild(cab);
+    const t = document.createElement("div");
+    t.className = "txt";
+    t.textContent = c.texto || "";   /* texto de estranho: textContent, sempre */
+    d.appendChild(t);
+    corpo.appendChild(d);
+  }
+  el.appendChild(corpo);
+}
+
+async function carregar() {
+  let d;
+  try { d = await api("/api/x"); } catch { return; }
+
+  const est = G("estado");
+  est.textContent = "";
+  const b = document.createElement("b");
+  b.textContent = d.ligado ? "WRITING" : "X OFF";
+  est.appendChild(b);
+  est.classList.toggle("off", !d.ligado);
+
+  G("contaPend").textContent = d.pendentes.length ? d.pendentes.length + " waiting" : "";
+  G("contaCom").textContent = d.comentarios.length ? String(d.comentarios.length) : "";
+  G("contaHist").textContent = d.historico.length ? String(d.historico.length) : "";
+
+  pintarLista("pendentes", d.pendentes, false,
+    d.ligado ? "nothing waiting — she writes when something is worth saying"
+             : "X is off: she is not being offered the action at all");
+  pintarComentarios(d.comentarios);
+  pintarLista("historico", d.historico, true, "nothing has gone out yet");
+}
+
+/* ------------------------------------------------------------- eventos */
+G("entrar").onclick = async () => {
+  const v = G("tok").value.trim();
+  if (!v) return;
+  token = v;
+  try {
+    await api("/api/x");
+    localStorage.setItem(CHAVE, v);
+    G("porta").hidden = true; G("painel").hidden = false;
+    carregar();
+  } catch { /* o 401 ja reabriu a porta com o recado */ }
+};
+G("tok").addEventListener("keydown", (e) => { if (e.key === "Enter") G("entrar").click(); });
+
+G("cEnviar").onclick = async () => {
+  const de = G("cDe").value.trim();
+  const texto = G("cTexto").value.trim();
+  if (!texto) { G("cAviso").textContent = "nothing to send"; return; }
+  G("cEnviar").disabled = true;
+  try {
+    await mandar({ tipo: "comentario", de, texto });
+    G("cDe").value = ""; G("cTexto").value = "";
+    G("cAviso").textContent = "she gets it on her next turn";
+    aviso("sent to her");
+    carregar();
+  } catch {
+    G("cAviso").textContent = "did not save";
+  } finally { G("cEnviar").disabled = false; }
+};
+
+/* Abre direto se ja houver token guardado. */
+if (token) {
+  G("painel").hidden = false;
+  carregar();
+} else {
+  abrirPorta("");
+}
+/* Recarrega sozinho: ela escreve enquanto a aba fica aberta. Intervalo folgado
+   de proposito — isto le o checkpoint em disco a cada chamada. */
+setInterval(() => { if (token && !document.hidden) carregar(); }, 20000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && token) carregar(); });
+</script>
+</body>
+</html>
