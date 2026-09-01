@@ -219,6 +219,12 @@ export const AJUSTAVEIS = [
   "MODEL", "EFFORT", "TICK_SECONDS",
   "REST_ENABLED", "ACTIVE_START_HOUR", "ACTIVE_END_HOUR",
   "X_POSTS_PER_DAY_EACH", "CHAT_MSGS_PER_TURN", "SLIPPAGE_ESCADA",
+  /* O CONTRATO DA MOEDA, ao vivo. Parece estrutural mas nao e: o
+     reloadLiveConfig ja o rele (linha do cfg.liveChatMint) e o religador do
+     ciclo trata explicitamente "o mint mudou a quente", entrando na sala
+     sozinho. Com isto, marcar o token no dia do lancamento deixa de exigir
+     restart — que e o que congela a tela de quem esta assistindo. */
+  "LIVE_CHAT_MINT", "ROOM_POST_ENABLED",
 ];
 
 function reloadLiveConfig() {
