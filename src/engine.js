@@ -965,7 +965,17 @@ function publish() {
     positions: state.positions,
     proposals: state.proposals,
     // A carteira REAL do banco (dev/fees) — o palco mostra saldo + endereco.
-    bank: state.bankWallet ?? (bankAddress() ? { address: bankAddress() } : null),
+    /* O BANCO SEM ENDERECO. (01/09/2026)
+       /api/state e PUBLICO e este campo levava o endereco da carteira dev
+       junto. O Michel trocou a carteira de lancamento de proposito — a do
+       Gogh atrai sniper porque o Gogh foi bem — e publicar a nova aqui
+       entregaria de bandeja o que a troca existia pra esconder, antes mesmo
+       de lancar. So o valor viaja: e o unico campo que alguem le
+       (stage.html:638) e ele nao identifica carteira nenhuma. */
+    bank: (() => {
+      const b = state.bankWallet;
+      return b ? { usd: b.usd ?? null, sol: b.sol ?? null } : null;
+    })(),
     // Totais VITALICIOS (all-time) — o site mostra; sobrevivem a restart.
     totals: { ...totals },
     // Peticoes ao banco: o CONSOLE mostra as with_bank com botoes aprovar/negar.
