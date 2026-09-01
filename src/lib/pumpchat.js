@@ -215,6 +215,26 @@ export function _dropForTest(mint) {
 //
 // `cookies` sai do perfil logado do agente (browser.js). Sem eles o servidor
 // aceita a conexao mas responde `authenticated:false` e recusa o envio.
+/* A mensagem VOLTOU pela sala? O motor mantem uma conexao aberta que recebe
+   `newMessage` de todo mundo — inclusive dela. Se o id aparecer la dentro da
+   janela, foi publicado de verdade; se nao, o servidor aceitou e engoliu.
+   Sem sala aberta nao da pra confirmar: devolve true para nao inventar uma
+   falha que nao sei que existe. */
+function confirmarEntrega(mint, id, janelaMs = 4000) {
+  const room = rooms.get(mint);
+  if (!room || room.closed) return Promise.resolve(true);
+  if (room.seen?.has(id)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const fim = Date.now() + janelaMs;
+    const olhar = () => {
+      if (room.seen?.has(id)) return resolve(true);
+      if (Date.now() >= fim) return resolve(false);
+      setTimeout(olhar, 250);
+    };
+    setTimeout(olhar, 250);
+  });
+}
+
 export function sendAs(mint, text, { cookies, address, timeout = 12000 } = {}) {
   return new Promise((resolve) => {
     const msg = String(text ?? "").trim();
@@ -266,8 +286,18 @@ export function sendAs(mint, text, { cookies, address, timeout = 12000 } = {}) {
 
           emit("sendMessage", { roomId: mint, message: msg, username: address }, (ack) => {
             const eco = ack?.[0];
-            if (eco?.id) return finish({ ok: true, id: eco.id, username: eco.username });
-            finish({ ok: false, code: "rejected" });
+            if (!eco?.id) return finish({ ok: false, code: "rejected" });
+            /* O ACK NAO E PROVA. (01/09/2026)
+               A pump.fun devolve id e nome de exibicao para mensagem que ela
+               NAO transmite — foi o que aconteceu no lancamento: cinco
+               mensagens "entregues" que ninguem na sala viu. Ack e recibo de
+               recebimento, nao de publicacao.
+               A prova real e a mensagem VOLTAR pelo push `newMessage` na sala
+               que o motor ja escuta. Se nao voltar, ela foi engolida. */
+            confirmarEntrega(mint, eco.id)
+              .then((entregue) => finish(entregue
+                ? { ok: true, id: eco.id, username: eco.username }
+                : { ok: false, code: "undelivered", id: eco.id }));
           });
         });
         return;

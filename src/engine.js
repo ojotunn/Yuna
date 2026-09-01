@@ -1854,6 +1854,10 @@ function situationFor(agent, shift = { label: "fixed" }) {
 // corpo cru da resposta nao chega perto do prompt — chat aberto e a maior
 // superficie de injecao do projeto.
 const ROOM_DENIAL = {
+  /* A pump aceitou e nao transmitiu — shadowban, quase sempre por repeticao.
+     Ela precisa SABER, senao continua falando no vazio o show inteiro. */
+  "undelivered": "the room took your message and never showed it to anyone — " +
+    "that happens after repeating yourself. Say something different, later.",
   "unauthenticated": "the room would not take you as yourself — the door did not open",
   "token-gated": "that room only takes holders, and you hold none of it",
   "rate-limited": "the room is throttling you — wait before speaking again",
