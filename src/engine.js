@@ -310,9 +310,24 @@ const PAUSA_MIN = num("BREAK_MINUTES", 10);
    sempre tem uma moeda pra ler e o mercado nao acaba. Hora marcada e o que
    faz existir. DRAW_HOUR=20 -> das 20:00 as 21:00. */
 const HORA_DESENHO = num("DRAW_HOUR", 20);
+/* A que altura do DIA DELA a hora do desenho acontece, quando a jornada e
+   relativa ao lancamento. 12 = meio da jornada de 16 horas. */
+const DESENHO_APOS_H = num("DRAW_AFTER_HOURS", 12);
+
 function naHoraDoDesenho() {
-  if (HORA_DESENHO < 0 || HORA_DESENHO > 23) return false;
   if (isResting()) return false;
+
+  /* JORNADA RELATIVA: a hora do desenho anda junto com ela. Com a jornada
+     relativa e a hora fixa no relogio, as duas descasariam — a "hora do
+     desenho" cairia a 5 horas de distancia num dia e a 19 no outro. */
+  if (SHOW_START) {
+    const ciclo = (HORAS_ACORDADA + HORAS_DORMINDO) * 3600000;
+    const noDia = (Date.now() - SHOW_START) % ciclo;   // ms desde que acordou
+    const h = noDia / 3600000;
+    return h >= DESENHO_APOS_H && h < DESENHO_APOS_H + 1;
+  }
+
+  if (HORA_DESENHO < 0 || HORA_DESENHO > 23) return false;
   return new Date().getHours() === HORA_DESENHO;
 }
 /* CICLO DE TESTE. Em producao a jornada e a hora do relogio: 50 de trabalho,
@@ -335,8 +350,32 @@ function minutosDePausaRestantes() {
   return Math.max(0, Math.ceil(CICLO_MIN - minutoDoCiclo()));
 }
 
+/* O INSTANTE EM QUE O SHOW COMECOU. Com ele, a jornada e relativa ao
+   lancamento; sem ele, e a hora do relogio (o comportamento antigo).
+   Aceita ISO ("2026-09-01T15:00:00") ou epoch em ms. */
+const SHOW_START = (() => {
+  const v = String(process.env.SHOW_START || "").trim();
+  if (!v) return null;
+  const t = /^\d+$/.test(v) ? Number(v) : Date.parse(v);
+  return Number.isFinite(t) && t > 0 ? t : null;
+})();
+const HORAS_ACORDADA = num("AWAKE_HOURS", 16);
+const HORAS_DORMINDO = num("SLEEP_HOURS", 8);
+
 function isResting() {
   if (!cfg.restEnabled) return false;
+
+  /* JORNADA RELATIVA AO LANCAMENTO (ver o comentario acima).
+     A conta e simples de proposito: quanto tempo passou desde que o show
+     comecou, dobrado no ciclo de 24h. As primeiras 16 horas ela esta acordada,
+     as 8 seguintes dorme, e repete. */
+  if (SHOW_START) {
+    const ciclo = (HORAS_ACORDADA + HORAS_DORMINDO) * 3600000;
+    const desde = Date.now() - SHOW_START;
+    if (desde < 0) return true;          // marcado pro futuro: ainda nao acordou
+    return (desde % ciclo) >= HORAS_ACORDADA * 3600000;
+  }
+
   const start = cfg.activeStartHour, end = cfg.activeEndHour;
   if (start === end) return false;
   const h = new Date().getHours();

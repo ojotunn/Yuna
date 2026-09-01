@@ -302,6 +302,29 @@ const servidor = http.createServer(async (req, res) => {
     return enviar(res, 200, { running: !!filho, state: estado });
   }
 
+  /* O LANCAMENTO. Marca a hora e a jornada passa a contar dali: 16 acordada,
+     8 dormindo, a partir deste instante. Precisa reiniciar o motor pra valer
+     (a marca e lida no boot) — a resposta diz isso. */
+  if (url.pathname === "/api/lancar" && req.method === "POST") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    const quando = new Date().toISOString();
+    try {
+      let txt = fs.readFileSync(ENV_SHOW, "utf8");
+      txt = txt.split(/\r?\n/).filter((l) => !/^\s*SHOW_START\s*=/.test(l)).join("\n");
+      txt += "\n# O LANCAMENTO: a jornada dela conta a partir daqui.\n" +
+             "SHOW_START=" + quando + "\n";
+      fs.writeFileSync(ENV_SHOW, txt);
+    } catch (e) {
+      return enviar(res, 500, { erro: String(e.message).slice(0, 120) });
+    }
+    return enviar(res, 200, {
+      ok: true, showStart: quando,
+      proximo: "reinicie o servidor pra valer: a marca e lida no boot",
+    });
+  }
+
   if (url.pathname === "/api/ligar" && req.method === "POST") return enviar(res, 200, ligar());
   if (url.pathname === "/api/desligar" && req.method === "POST") return enviar(res, 200, desligar());
   if (url.pathname === "/api/log") return enviar(res, 200, { log: log.slice(-120) });
