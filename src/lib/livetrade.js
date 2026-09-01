@@ -23,7 +23,7 @@ import * as chrome from "./browser.js";
 import * as pumpauth from "./pumpauth.js";
 import { load as loadWallet, b58encode } from "./signer.js";
 import { attachWallet } from "./pumpwallet.js";
-import { approveAndSign, sendSigned } from "./executor.js";
+import { approveAndSign, sendSigned, origemPermitida, ORIGENS_PERMITIDAS } from "./executor.js";
 
 /* <ID>_SOL_KEYPAIR: o nome vem do id do agente, entao elenco novo nao
    precisa de entrada nova aqui. Era um mapa fixo de dois nomes. */
@@ -48,6 +48,21 @@ export async function armWallet(agentId, { maxSolSpend, onEvent = null }) {
 
   const gate = async (txBytes, { send }) => {
     say(`the page asked to sign a transaction (${txBytes.length} bytes)`);
+
+    /* DE ONDE VEIO O PEDIDO. (01/09/2026)
+       Esta ponte fica exposta na mesma aba em que ela navega o dia inteiro, e
+       ate hoje assinava sem olhar o endereco da pagina — bastava a transacao
+       passar na peneira de programas. A `carteira-navegador.js` ja checava o
+       dominio; esta nao, e as duas rodam no show.
+       Falha FECHADO: URL ilegivel tambem e recusa. */
+    const onde = origemPermitida(page.url());
+    if (!onde.ok) {
+      const recado = `this wallet only signs on ${ORIGENS_PERMITIDAS.join(", ")} — not on ${onde.host || "an unknown origin"}`;
+      console.log(`[carteira] RECUSEI ASSINAR em ${onde.host || "origem desconhecida"}`);
+      say(`REFUSED — ${recado}`);
+      return { ok: false, reason: recado };
+    }
+
     const v = await approveAndSign(txBytes, {
       owner: wallet.address,
       keypairEnvKey: KEYPAIR_ENV[agentId],

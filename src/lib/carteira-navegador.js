@@ -297,9 +297,12 @@ export async function instalarCarteira(page, envKey) {
       /* Assinar TEXTO e como ela prova quem e (o login da pump). Fora de casa,
          um texto assinado tambem vale como autorizacao em muitos sites — entao
          a mesma regra vale aqui. */
-      const onde = (() => { try { return new URL(page.url()).hostname; } catch { return ""; } })();
-      const casa = ["pump.fun", "jup.ag", "jupiter.exchange"];
-      if (!casa.some((d) => onde === d || onde.endsWith("." + d))) {
+      /* Mesma lista do executor.js — a de assinar transacao. Sao dois portoes
+         (texto e transacao) e uma lista so: manter duas em sincronia e o tipo
+         de coisa que funciona ate o dia em que nao funciona. */
+      const { origemPermitida } = await import("./executor.js");
+      const { ok: emCasa, host: onde } = origemPermitida(page.url());
+      if (!emCasa) {
         console.log(`[carteira] recusei assinar texto em ${onde || "origem desconhecida"}`);
         throw new Error("this wallet only signs on pump.fun and jup.ag");
       }
@@ -328,16 +331,19 @@ export async function instalarCarteira(page, envKey) {
            desta lista nao e um site que ela deveria estar usando, e a diferenca
            entre "pediu" e "conseguiu" e a carteira dela inteira. A lista branca
            de programas continua valendo por dentro; esta e por fora. */
-        const onde = (() => { try { return new URL(page.url()).hostname; } catch { return ""; } })();
-        const casa = ["pump.fun", "jup.ag", "jupiter.exchange"];
-        const emCasa = casa.some((d) => onde === d || onde.endsWith("." + d));
+        /* A LISTA MORA NO executor.js, uma so para as duas pontes de carteira
+           (esta e a do livetrade.js). Quando cada uma tinha a sua copia, dava
+           para acrescentar uma corretora num arquivo e esquecer o outro — e o
+           esquecido e sempre o que ninguem testa. */
+        const executor = await import("./executor.js");
+        const { ok: emCasa, host: onde } = executor.origemPermitida(page.url());
         if (!emCasa) {
-          console.log(`[carteira] RECUSEI ASSINAR em ${onde || "origem desconhecida"} — so pump.fun e jup.ag`);
-          return { ok: false, reason: `this wallet only signs on pump.fun and jup.ag, not on ${onde}` };
+          console.log(`[carteira] RECUSEI ASSINAR em ${onde || "origem desconhecida"}`);
+          return { ok: false, reason:
+            `this wallet only signs on ${executor.ORIGENS_PERMITIDAS.join(", ")}, not on ${onde || "an unknown origin"}` };
         }
         const tx = Uint8Array.from(bytes || []);
         if (!tx.length) return { ok: false, reason: "empty transaction" };
-        const executor = await import("./executor.js");
         const tetoSol = Number(process.env.MAX_TX_SOL || 0.05);
         const r = await executor.approveAndSign(tx, {
           owner: carteira.address, keypairEnvKey: envKey, maxSolSpend: tetoSol,

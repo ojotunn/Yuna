@@ -112,10 +112,14 @@ function readCompactU16(buf, off) {
   return { val, off: i };
 }
 
-// Separa [assinaturas][mensagem] e devolve os program ids que a mensagem toca.
-// Aceita transacao versionada (v0, primeiro byte da mensagem com bit alto) e
-// legada. NAO interpreta os dados das instrucoes — o que decide se o valor sai
-// e a simulacao; isto aqui e a peneira estrutural.
+// Separa [assinaturas][mensagem] e devolve os program ids que a mensagem toca
+// E O PRIMEIRO BYTE DE CADA INSTRUCAO. Aceita transacao versionada (v0) e legada.
+//
+// O primeiro byte passou a importar em 01/09/2026: sem ele, "o programa esta na
+// lista branca" era a unica pergunta feita, e `Transfer`, `Approve` e
+// `SetAuthority` sao instrucoes do MESMO programa de token por onde a compra
+// legitima passa. Ler o discriminador e a diferenca entre vender uma moeda e
+// entregar a carteira.
 export function inspectTx(bytes) {
   const buf = Buffer.from(bytes);
   const { val: nSigs, off: afterCount } = readCompactU16(buf, 0);
@@ -146,6 +150,7 @@ export function inspectTx(bytes) {
   const { val: nIx, off: afterIx } = readCompactU16(msg, p);
   p = afterIx;
   const programs = [];
+  const instrucoes = [];
   for (let i = 0; i < nIx; i++) {
     const programIdIndex = msg[p++];
     if (programIdIndex >= keys.length)
@@ -154,20 +159,104 @@ export function inspectTx(bytes) {
     const { val: nAcc, off: a1 } = readCompactU16(msg, p);
     p = a1 + nAcc;
     const { val: dataLen, off: a2 } = readCompactU16(msg, p);
+    /* So o discriminador. Nao decodifico argumento nenhum: quanto menos este
+       parser entender, menos ele erra. Instrucao sem dados vira null. */
+    instrucoes.push({
+      programa: keys[programIdIndex],
+      op: dataLen > 0 ? msg[a2] : null,
+    });
     p = a2 + dataLen;
   }
 
-  return { versioned, nSigs, sigOffset, msgOffset, message: msg, keys, programs, signer: keys[0] };
+  return { versioned, nSigs, sigOffset, msgOffset, message: msg, keys, programs,
+           instrucoes, signer: keys[0] };
 }
 
-// A peneira estrutural: todo programa tocado tem que estar na lista branca, e
-// quem assina tem que ser o proprio agente.
+/* OS DOIS PROGRAMAS DE TOKEN e as corretoras. A separacao existe por causa da
+   regra logo abaixo: token so se move ATRAVESSANDO uma corretora. */
+const PROGRAMAS_TOKEN = new Set([
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  // SPL Token
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",  // Token-2022
+]);
+const CORRETORAS = new Set([
+  "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",  // pump.fun
+  "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",  // pump AMM
+  "FAdo9NCw1ssek6Z6yeWzWjhLVsr8uiCwcWNUnKgzTnHe", // PumpPortal
+  "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",  // Jupiter v6
+  "JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB",  // Jupiter v4
+]);
+
+/* Instrucoes do programa de token que ENTREGAM a carteira a outra pessoa.
+   Numeracao do SPL Token (o primeiro byte dos dados), igual no Token-2022. */
+const DELEGAR = new Map([
+  [4,  "Approve"],         // da a um terceiro o direito de mover os tokens dela
+  [6,  "SetAuthority"],    // troca o dono da conta de token
+  [13, "ApproveChecked"],
+]);
+const MOVER = new Map([
+  [3,  "Transfer"],
+  [8,  "Burn"],
+  [9,  "CloseAccount"],
+  [12, "TransferChecked"],
+]);
+
+/* ONDE ESTA CARTEIRA ASSINA — e em mais lugar nenhum.
+   Ela navega a internet inteira o dia todo: foruns, agregadores, qualquer link
+   que aparecer no chat da live. Um site que pede assinatura fora desta lista
+   nao e um site que ela deveria estar usando, e a distancia entre "pediu" e
+   "conseguiu" e a carteira dela inteira.
+
+   Mora AQUI, e nao em cada ponte, porque existem duas pontes de carteira
+   (carteira-navegador.js e livetrade.js) e as duas precisam concordar. Quando
+   a lista estava so numa delas, a outra assinava em qualquer lugar. */
+export const ORIGENS_PERMITIDAS = ["pump.fun", "jup.ag", "jupiter.exchange"];
+
+export function origemPermitida(url) {
+  let host = "";
+  try { host = new URL(String(url || "")).hostname.toLowerCase(); } catch { return { ok: false, host: "" }; }
+  /* `endsWith("." + d)` e nao `includes(d)`: `pump.fun.golpe.com` contem
+     "pump.fun" e nao e a pump.fun. O ponto na frente e o que separa subdominio
+     de dominio parecido. */
+  const ok = ORIGENS_PERMITIDAS.some((d) => host === d || host.endsWith("." + d));
+  return { ok, host };
+}
+
+// A peneira estrutural: todo programa tocado tem que estar na lista branca,
+// quem assina tem que ser o proprio agente, e o que a transacao FAZ com os
+// tokens tem que ser um trade — nao uma entrega.
 export function checkWhitelist(info, expectedSigner) {
   if (info.signer !== expectedSigner)
     return { ok: false, reason: `a transacao seria assinada por ${info.signer}, nao pelo agente` };
   for (const prog of info.programs) {
     if (!ALLOWED_PROGRAMS.has(prog))
       return { ok: false, reason: `programa fora da lista branca: ${prog}` };
+  }
+
+  /* DELEGAR E SEMPRE NAO — com corretora ou sem.
+     Nenhum swap em Solana precisa de aprovacao previa: quem assina a transacao
+     ja autoriza aquele movimento, e so aquele. Delegate e vicio de EVM, e em
+     Solana e a assinatura predileta de quem drena carteira, porque parece
+     inofensiva e vale para sempre. */
+  for (const ix of info.instrucoes ?? []) {
+    if (!PROGRAMAS_TOKEN.has(ix.programa)) continue;
+    const nome = DELEGAR.get(ix.op);
+    if (nome)
+      return { ok: false, reason:
+        `a transacao pede ${nome} — dar a outra pessoa poder sobre os tokens dela. Nenhum trade precisa disso.` };
+  }
+
+  /* TOKEN SO SE MOVE ATRAVESSANDO UMA CORRETORA.
+     Toda compra e toda venda de verdade passam pela pump.fun, pela pump AMM,
+     pelo PumpPortal ou pelo Jupiter — e por isso que essas transacoes existem.
+     Uma transferencia para a carteira de um estranho nao passa por nenhuma:
+     ela toca so o programa de token, custa ~0,000005 SOL e por isso escapava
+     do teto de gasto, que so olha os lamports dela. */
+  const move = (info.instrucoes ?? []).filter(
+    (ix) => PROGRAMAS_TOKEN.has(ix.programa) && MOVER.has(ix.op));
+  if (move.length && !info.programs.some((prog) => CORRETORAS.has(prog))) {
+    const quais = [...new Set(move.map((ix) => MOVER.get(ix.op)))].join(", ");
+    return { ok: false, reason:
+      `a transacao move token (${quais}) sem passar por corretora nenhuma — isso e transferencia, nao trade` };
   }
   return { ok: true };
 }
