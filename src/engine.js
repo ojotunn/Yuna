@@ -4908,6 +4908,15 @@ async function loop() {
     processBankDecisions();
     // Recargas da treasury (console -> treasury-topups.json). Mesmo compasso.
     processTreasuryTopups();
+    /* A ABA VOLTA PRA CASA quando ela para de navegar. (01/09/2026)
+       O painel do navegador na live e metade da cena. Se a ultima acao nao foi
+       de navegacao, a aba fica na ultima pagina — ou em branco, se nunca
+       navegou. Isto a traz de volta pra moeda dela depois de um tempo parada,
+       sem atrapalhar quando ela ESTA lendo alguma coisa. */
+    if (state.tick % 10 === 0) {
+      chrome.repousar(ORDER[0]).catch(() => {});
+    }
+
     /* A HORA DO LANCAMENTO, relida a cada ciclo. Antes so era lida no boot, e
        marcar o lancamento exigia reiniciar — no Railway o restart apagava a
        marca junto, porque ela era gravada fora do volume. */

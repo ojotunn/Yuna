@@ -489,8 +489,45 @@ export async function getAgentPage(id) {
      ANTIGA: o painel na tela mostrava um cadaver enquanto ela comprava e vendia
      de verdade na aba nova. O Michel viu o ciclo inteiro acontecer sem ver
      nada acontecer. */
+  /* A ABA NAO FICA EM BRANCO. (01/09/2026)
+     A aba so e usada em `browse`/`search`; leitura de token vem de API. Entao
+     enquanto ela pensa, fala, desenha ou escreve, o painel do navegador na
+     live mostrava about:blank — tela branca no meio do show. Agora ela repousa
+     na pagina da propria moeda, que e onde uma pessoa deixaria a aba aberta no
+     dia em que lancou uma. Nao bloqueia: se a navegacao falhar, segue. */
+  paraCasa(page).catch(() => {});
   updateLiveView(id).catch(() => {});
   return page;
+}
+
+/* Traz a aba de volta pra casa se ela estiver em branco. Chamado pelo motor
+   de tempos em tempos: nao mexe numa aba que tem conteudo, entao nunca
+   interrompe uma leitura. */
+export async function repousar(id) {
+  const page = agentPages.get(id);
+  if (!page || page.isClosed()) return false;
+  const foi = await paraCasa(page);
+  if (foi) updateLiveView(id).catch(() => {});
+  return foi;
+}
+
+/* A pagina onde a aba dela descansa. */
+export function urlDeCasa() {
+  const mint = String(process.env.LIVE_CHAT_MINT || "").trim();
+  return mint ? `https://pump.fun/coin/${mint}` : "https://pump.fun/board";
+}
+
+async function paraCasa(page) {
+  try {
+    if (!/^about:blank$/.test(page.url())) return false;   // ja tem conteudo
+    await page.goto(urlDeCasa(), {
+      waitUntil: "domcontentloaded",
+      timeout: Number(process.env.NAV_TIMEOUT_MS) || 25000,
+    });
+    await dispensarConsentimento(page);
+    await fecharPopups(page);
+    return true;
+  } catch { return false; }
 }
 
 /* A CARTEIRA DELA ENTRA EM TODA ABA NOVA.
