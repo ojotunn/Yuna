@@ -2940,9 +2940,22 @@ async function apply(agent, action) {
           // nenhuma — entao a tela vai junto pra pagina da moeda na pump.fun.
           // Pesquisar um token e um ATO, e ato tem que ser assistivel.
           await showOnPump(agent, mint);
+          /* A FITA. Primeiro pedido dela atendido (ver market.js): o
+             `participants` da pump dizia 3 numa moeda com 107 holders, e ela
+             passou o dia sem entrar porque toda moeda parecia morta. */
+          const fita = await market.fitaDoMint(mint).catch(() => null);
           agent.lastRead = { ...(agent.lastRead ?? {}),
             target: `${tk.symbol} · pump.fun`, kind: "token",
-            excerpt: [`market cap $${Math.round(tk.usdMarketCap)}`, `holders ${tk.participants}`,
+            excerpt: [`market cap $${Math.round(tk.usdMarketCap)}`,
+              fita
+                ? `holders ${fita.holders}${fita.holdersTruncado ? "+" : ""} · ` +
+                  `${fita.compras} buys / ${fita.vendas} sells · ` +
+                  `${fita.compradores} buyers / ${fita.vendedores} sellers · ` +
+                  `${fita.volCompraSol} SOL in / ${fita.volVendaSol} SOL out` +
+                  (fita.vendedores === 0 && fita.janela > 20
+                    ? " — NOBODY HAS SOLD YET: no proof anyone can get out"
+                    : "")
+                : `holders ${tk.participants}`,
                       `replies ${tk.replyCount}`, tk.complete ? "bonded" : "on curve",
                       // MAYHEM ATIVO e recusa da casa — tem que aparecer na
                       // ficha, senao o agente propoe e leva um nao sem entender.

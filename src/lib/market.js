@@ -218,6 +218,76 @@ export async function pumpRecent(limit = 12) {
 
 import * as chrome from "./browser.js";
 
+/* A FITA DE NEGOCIACAO. (01/09/2026 — primeiro pedido dela, via `ask`)
+   A pump.fun nao expoe compras vs vendas, e o `num_participants` dela mente:
+   na moeda da casa dizia 3 enquanto a corrente tinha 107 holders. Ela decidia
+   com um numero que era 3% da realidade.
+
+   Duas fontes, as duas da Helius:
+     holders — DAS getTokenAccounts, conta carteira com saldo > 0
+     fita    — enhanced transactions, uma chamada ja parseada
+
+   Compra e venda sao lidas pela direcao do token: se a conta que pagou a taxa
+   RECEBEU o token, comprou; se mandou, vendeu. */
+const _fita = new Map();               // mint -> { quando, dados }
+const FITA_MS = 3 * 60 * 1000;         // ela reabre a mesma moeda no mesmo raciocinio
+
+function heliusUrl() {
+  const rpc = String(process.env.SOLANA_RPC || "");
+  const m = rpc.match(/api-key=([a-f0-9-]+)/i);
+  return m ? m[1] : null;
+}
+
+export async function fitaDoMint(mint) {
+  const chave = heliusUrl();
+  if (!chave || !mint) return null;
+  const cache = _fita.get(mint);
+  if (cache && Date.now() - cache.quando < FITA_MS) return cache.dados;
+
+  try {
+    const [holders, tx] = await Promise.all([
+      /* HOLDERS DE VERDADE. Uma pagina de 1000 ja cobre qualquer moeda nova;
+         se houver mais, o numero sai com "+" e isso basta pra decidir. */
+      fetch(`https://mainnet.helius-rpc.com/?api-key=${chave}`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTokenAccounts",
+                               params: { mint, limit: 1000 } }),
+      }).then((r) => r.json()).catch(() => null),
+      fetch(`https://api.helius.xyz/v0/addresses/${mint}/transactions?api-key=${chave}&limit=100`)
+        .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]);
+
+    const contas = holders?.result?.token_accounts ?? [];
+    const nHolders = contas.filter((a) => Number(a.amount) > 0).length;
+    const truncado = contas.length >= 1000;
+
+    let compras = 0, vendas = 0, volC = 0, volV = 0;
+    const cU = new Set(), vU = new Set();
+    for (const t of (Array.isArray(tx) ? tx : [])) {
+      const tt = (t.tokenTransfers || []).find((x) => x.mint === mint);
+      if (!tt) continue;
+      const quem = t.feePayer;
+      const sol = (t.nativeTransfers || []).reduce((a, x) => a + Math.abs(x.amount || 0), 0) / 1e9;
+      if (tt.toUserAccount === quem) { compras++; cU.add(quem); volC += sol; }
+      else { vendas++; vU.add(quem); volV += sol; }
+    }
+
+    const dados = {
+      holders: nHolders, holdersTruncado: truncado,
+      compras, vendas, compradores: cU.size, vendedores: vU.size,
+      volCompraSol: Number(volC.toFixed(3)), volVendaSol: Number(volV.toFixed(3)),
+      janela: Array.isArray(tx) ? tx.length : 0,
+    };
+    _fita.set(mint, { quando: Date.now(), dados });
+    if (_fita.size > 300) _fita.delete(_fita.keys().next().value);
+    return dados;
+  } catch {
+    /* Falha fechada e calada: a ficha volta a ser o que era. Dado de mercado
+       que derruba o turno seria pior que dado faltando. */
+    return null;
+  }
+}
+
 // Busca na web. Sem isso o agente le a internet mas nao navega nela: so alcanca
 // URL que ja esteja no contexto dele. E o que separa "pode ler" de "pode achar".
 export async function search(query, max = 8, shotPath = null, key = undefined) {
