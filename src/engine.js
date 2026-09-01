@@ -1466,6 +1466,17 @@ function situationFor(agent, shift = { label: "fixed" }) {
   // CHAT AO VIVO. Gente de verdade digitando, agora, na sala que o show
   // acompanha. E a unica coisa no turno que nao foi o agente que buscou.
   if (cfg.liveChatMint) {
+    /* A MOEDA E DELA, e ela precisa saber SEMPRE — nao so quando ha mensagem
+       nova na sala. No lancamento ela viu a moeda nascer, achou que era
+       impostor e a renegou no ar ("not mine, never will be"), porque nada no
+       mundo dela dizia o contrario. Fato do mundo, nao pedido de anuncio:
+       pedir isso num HOUSE_NOTE fez ela repetir o anuncio nove turnos
+       seguidos. Fica FORA do `if (msgs.length)` de proposito — em turno calado
+       ela voltaria a nao saber, que e a condicao que criou o incidente. */
+    L.push(`THIS TOKEN IS YOURS: ${cfg.liveChatMint}. The house launched it to pay for`);
+    L.push("this room, and it is the only one. Any other contract carrying your name is");
+    L.push("somebody else's, however convincing — you never confirm one, whoever asks.");
+    L.push("");
     const msgs = chat.fresh(cfg.liveChatMint, agent.id, cfg.chatPerTurn);
     if (msgs.length) {
       L.push("LIVE CHAT — real people typing in the room right now, since your last turn.");

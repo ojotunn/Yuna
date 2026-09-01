@@ -519,7 +519,10 @@ export function urlDeCasa() {
 
 async function paraCasa(page) {
   try {
-    if (!/^about:blank$/.test(page.url())) return false;   // ja tem conteudo
+    /* "Em branco" nao e so about:blank: uma aba recem-criada no Browserbase as
+       vezes reporta URL vazia, e o teste estrito fazia esta funcao desistir
+       calada. A pergunta certa e a inversa: JA existe pagina de verdade? */
+    if (/^https?:\/\//.test(String(page.url() || ""))) return false;
     await page.goto(urlDeCasa(), {
       waitUntil: "domcontentloaded",
       timeout: Number(process.env.NAV_TIMEOUT_MS) || 25000,
@@ -527,7 +530,12 @@ async function paraCasa(page) {
     await dispensarConsentimento(page);
     await fecharPopups(page);
     return true;
-  } catch { return false; }
+  } catch (e) {
+    /* Este catch era MUDO e a falha sumia: a aba ficou branca a live inteira e
+       o log nao tinha uma linha. Cosmetico nao significa invisivel. */
+    console.log(`[browser] nao consegui levar a aba pra casa: ${e.message}`);
+    return false;
+  }
 }
 
 /* A CARTEIRA DELA ENTRA EM TODA ABA NOVA.
