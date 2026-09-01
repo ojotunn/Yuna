@@ -411,6 +411,57 @@ const servidor = http.createServer(async (req, res) => {
     return;
   }
 
+  /* A ENERGIA DA CASA. (01/09/2026, no dia do lancamento)
+     Quando a treasury zera o motor entra em coma — "nobody here thinks" — e o
+     show para. O canal de recarga existia no motor desde sempre
+     (processTreasuryTopups le treasury-topups.json a cada ciclo), mas NENHUMA
+     rota escrevia nesse arquivo: no Railway nao havia como recarregar, e o
+     show morreria sem volta.
+
+     POST /api/energia {"usd": 100, "nota": "recarga"} — vale no proximo turno.
+     GET  /api/energia — quanto resta e por quanto tempo. */
+  if (url.pathname === "/api/energia" && req.method === "POST") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    let corpo = "";
+    for await (const p of req) { corpo += p; if (corpo.length > 4000) break; }
+    let dado = {};
+    try { dado = JSON.parse(corpo || "{}"); } catch { return enviar(res, 400, { erro: "corpo torto" }); }
+    const usd = Number(dado.usd);
+    if (!Number.isFinite(usd) || usd <= 0 || usd > 5000)
+      return enviar(res, 400, { erro: "usd tem que ser entre 0 e 5000" });
+    const arq = process.env.TREASURY_TOPUPS_FILE || path.join(ROOT, "src", "data", "treasury-topups.json");
+    try {
+      let topups = [];
+      try { topups = JSON.parse(fs.readFileSync(arq, "utf8"))?.topups ?? []; } catch { /* primeiro uso */ }
+      /* Id unico: o motor deduplica por ele (state.topupsSeen), senao um
+         restart creditaria a mesma recarga de novo. */
+      const id = `t${Date.now().toString(36)}${topups.length.toString(36)}`;
+      topups.push({ id, usd, quando: Date.now(), ...(dado.nota ? { note: String(dado.nota).slice(0, 120) } : {}) });
+      if (topups.length > 200) topups = topups.slice(-100);
+      fs.mkdirSync(path.dirname(arq), { recursive: true });
+      fs.writeFileSync(arq, JSON.stringify({ topups }, null, 2));
+      console.log(`[energia] +$${usd} na treasury`);
+      return enviar(res, 200, { ok: true, id, usd, vale: "no proximo turno dela" });
+    } catch (e) {
+      return enviar(res, 500, { erro: String(e.message).slice(0, 160) });
+    }
+  }
+
+  if (url.pathname === "/api/energia") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    const e = (ultimoEstado || estadoDeCasa?.estado || {});
+    return enviar(res, 200, {
+      treasury: e.treasury ?? null,
+      gastoReal: e.spentReal ?? null,
+      queimaPorHora: e.burnPerHour ?? null,
+      horasRestantes: e.runwayHours ?? null,
+    });
+  }
+
   /* ===================== AJUSTE AO VIVO =====================
      Mexer num numero SEM reiniciar o show. No Railway, mudar uma variavel no
      painel reinicia o servico — e reiniciar no meio da live congela a tela de
