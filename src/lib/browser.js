@@ -367,6 +367,65 @@ export async function dispensarConsentimento(page) {
   } catch { return false; }
 }
 
+/* SO FECHAR — nunca aceitar.
+   Cada padrao aqui e uma forma de dizer "nao, obrigado" ou de fechar a janela.
+   Nao ha um unico "accept"/"agree"/"continue" na lista, e nao deve haver: um
+   modal que EXIGE aceitar termo fica na tela para o Michel decidir. */
+const FECHAR = [
+  /^[\s]*[x✕✖×⨯]\s*$/i, /^close$/i, /^dismiss$/i, /^no thanks$/i,
+  /^not now$/i, /^maybe later$/i, /^skip$/i, /^later$/i,
+];
+
+/* Rotulos que NUNCA podem ser clicados por engano, mesmo que caiam perto de um
+   padrao de fechar. Rede de seguranca explicita. */
+const NUNCA = /accept|agree|continue|i'm ready|im ready|connect|approve|allow|sign|buy|sell|confirm/i;
+
+export async function fecharPopups(page) {
+  let fechou = [];
+  try {
+    /* 1. Esc primeiro: e o jeito universal, nao clica em nada e a maioria dos
+          modais bem-feitos responde. */
+    await page.keyboard.press("Escape").catch(() => {});
+    await new Promise((r) => setTimeout(r, 250));
+
+    /* 2. Botao de fechar, no maximo 3 (um banner + um modal + folga). Mais que
+          isso e sinal de que estou clicando em coisa que nao devia. */
+    for (let i = 0; i < 3; i++) {
+      const alvo = await page.evaluate((fontes, nunca) => {
+        const pats = fontes.map((f) => new RegExp(f.fonte, f.flags));
+        const proibido = new RegExp(nunca.fonte, nunca.flags);
+        const vis = (e) => {
+          const r = e.getBoundingClientRect();
+          if (r.width < 8 || r.height < 8 || r.width > 200 || r.height > 120) return false;
+          const st = getComputedStyle(e);
+          return st.visibility !== "hidden" && st.display !== "none" && Number(st.opacity) > 0.1
+                 && r.top >= -10 && r.top < innerHeight;
+        };
+        const cand = [...document.querySelectorAll(
+          "button,a[role=button],div[role=button],[aria-label],[class*=close],[class*=dismiss]")];
+        for (const b of cand) {
+          if (!vis(b)) continue;
+          const rot = ((b.getAttribute("aria-label") || "") + " " + (b.textContent || "")).trim();
+          if (!rot || rot.length > 24) continue;
+          if (proibido.test(rot)) continue;          // nao aceita nada, nunca
+          if (!pats.some((p) => p.test(rot.trim()))) continue;
+          const r = b.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2, rot };
+        }
+        return null;
+      }, FECHAR.map((r) => ({ fonte: r.source, flags: r.flags })),
+         { fonte: NUNCA.source, flags: NUNCA.flags });
+      if (!alvo) break;
+      /* clique de MOUSE: em app React o handler costuma estar num pai, e um
+         .click() sintetico no filho nao dispara nada. */
+      await page.mouse.click(alvo.x, alvo.y);
+      fechou.push(alvo.rot || "x");
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  } catch { /* pop-up e cosmetico: nunca pode derrubar o turno */ }
+  return fechou;
+}
+
 async function gotoAndSettle(page, url) {
   // domcontentloaded + janela curta de rede ociosa, em vez de networkidle2:
   // pagina com websocket/grafico ao vivo NUNCA assenta e estourava os 25s de
@@ -377,6 +436,7 @@ async function gotoAndSettle(page, url) {
   await new Promise((r) => setTimeout(r, 600));
   // e o banner de consentimento sai da frente antes de qualquer leitura/clique
   await dispensarConsentimento(page);
+  await fecharPopups(page);
   /* reaponta o live view: sem isto o painel mostra a aba em branco */
   for (const [id, p2] of agentPages) if (p2 === page) updateLiveView(id).catch(() => {});
   return resp ? resp.status() : 200;
@@ -484,7 +544,7 @@ export async function garantirLoginPump(id) {
   const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
   if (!/pump\.fun/.test(page.url())) await gotoAndSettle(page, "https://pump.fun");
-  else await dispensarConsentimento(page);
+  else { await dispensarConsentimento(page); await fecharPopups(page); }
   await espera(1500);
   if (await estaLogada()) return "ja estava";
 
