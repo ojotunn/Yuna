@@ -501,7 +501,13 @@ function acharCaminho(livre,ox,oy,dx,dy){
       let n=0;
       for(let i=0;i<w*h;i++) if(uniao[i]){ saida.data[i*4+3]=255; n++; }
       gM.putImageData(saida,0,0);
-      e.silhueta={img:cvM,x:ox,y:oy};
+      /* A ALTURA REAL DA MANCHA (nao a do canvas, que e o retalho inteiro).
+         E ela que diz se o movel e alto ou rasteiro, e disso sai a folga de
+         profundidade do gato — ver o desenho do gato mais abaixo. */
+      let sy0 = h, sy1 = -1;
+      for(let y=0;y<h;y++) for(let x=0;x<w;x++)
+        if(uniao[y*w+x]){ if(y<sy0) sy0=y; if(y>sy1) sy1=y; break; }
+      e.silhueta={img:cvM,x:ox,y:oy,altura:Math.max(1, sy1-sy0)};
       /* PERFIL DE TOPO: pra cada coluna, a primeira linha em que a estacao
          desenhou alguma coisa. E o que diz onde esta a CABECA dela — usar a
          altura media (0,80 x ALT) punha o balao dentro dela em toda estacao:
@@ -1142,9 +1148,23 @@ function acharCaminho(livre,ox,oy,dx,dy){
          eternamente de pe ao lado da mesa. Este era o comportamento original;
          eu o "melhorei" e quebrei a live inteira. */
       if(cena.movel !== motor.ultimoMovel){
+        const primeira = motor.ultimoMovel === null && !motor.visto;
         motor.ultimoMovel = cena.movel;
-        if(yuna.estacao !== cena.movel) usar(cena.movel);
+        if(yuna.estacao !== cena.movel){
+          /* PRIMEIRA VEZ: coloca, nao manda andar. Ver o comentario acima —
+             quem da refresh nao pode ver ela atravessar o quarto de novo. */
+          if(primeira){
+            const e = estacoes[cena.movel];
+            yuna.rota = []; yuna.indoPara = null; yuna.gesto = null;
+            yuna.x = e.aproximar[0]; yuna.y = e.aproximar[1];
+            yuna.estacao = cena.movel;
+            yuna.fase = null; yuna.faseIdx = 0;
+            const o = e.olhar;
+            if(o) yuna.olhando = {dx:o[0], dy:o[1]};
+          } else usar(cena.movel);
+        }
       }
+      motor.visto = 1;
     } else if(cena === null && motor.ultimoMovel){
       motor.ultimoMovel = null;
       if(yuna.estacao) sair();
@@ -1634,11 +1654,20 @@ function acharCaminho(livre,ox,oy,dx,dy){
       ctx.drawImage(cama,e.pos[0],e.pos[1]);
       if(jiji){
         const naFrente=pecas.filter(m=>m.b>jiji.y);
-        /* se o gato esta atras do pe dela, ELA tambem o oclui */
-        /* +24px de folga: com o limiar cru na base, um gato dois pixels a
-           frente dela ja passava por cima do corpo inteiro. Empate tecnico
-           conta como "atras". */
-        if(e.silhueta && jiji.y<=e.base+24) naFrente.push(e.silhueta);
+        /* se o gato esta atras do pe dela, ELA tambem o oclui.
+           A FOLGA E PROPORCIONAL A ALTURA DO MOVEL, nao fixa em 24px.
+           Os 24 existiam por um motivo certo — sem folga, um gato dois pixels
+           a frente dela ja passava por cima do corpo inteiro, e empate tecnico
+           tem que contar como "atras". Mas em movel RASTEIRO (o puff, os
+           pesinhos) o gato anda exatamente dentro dessa faixa, e ali ele era
+           apagado pela silhueta DELA estando na frente: sumia. Movel alto
+           mantem a folga generosa; rasteiro ganha pouca, porque ali 24px e a
+           diferenca entre estar atras e estar na frente. */
+        if(e.silhueta){
+          const alt = e.silhueta.altura || e.silhueta.img.height;
+          const folga = Math.max(4, Math.min(24, Math.round(alt * 0.06)));
+          if(jiji.y <= e.base + folga) naFrente.push(e.silhueta);
+        }
         desenharGato(spG,naFrente);
       }
 
