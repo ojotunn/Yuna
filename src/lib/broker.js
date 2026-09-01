@@ -25,24 +25,24 @@ const FEE = { pump: 0.01 };
 export function check(agent, p, ctx, cfg) {
   const cap = agent.wallet;
 
-  if (cap <= 0) return deny("sem capital — a carteira esta zerada");
+  if (cap <= 0) return deny("no capital — the wallet is empty");
 
   if (agent.dayPnl <= -(cfg.dailyLossLimitPct / 100) * agent.dayStartWallet)
-    return deny(`limite de perda diaria atingido (${cfg.dailyLossLimitPct}%)`);
+    return deny(`daily loss limit reached (${cfg.dailyLossLimitPct}%)`);
 
   const size = Number(p.sizeUsd ?? 0);
-  if (!(size > 0)) return deny("tamanho invalido");
+  if (!(size > 0)) return deny("invalid size");
 
   const maxSize = (agent.maxTradePct / 100) * cap;
   if (size > maxSize + 1e-9)
     return deny(
-      `acima do teto por operacao: ${fmt(size)} pedido, ${fmt(maxSize)} permitido (${agent.maxTradePct}% de ${fmt(cap)})`
+      `over the per-trade cap: ${fmt(size)} asked, ${fmt(maxSize)} allowed (${agent.maxTradePct}% of ${fmt(cap)})`
     );
 
   if (p.venue === "pump") {
     const t = ctx.token;
-    if (!t || t.mint !== p.market) return deny("ficha do token nao carregou — nao compro as cegas");
-    if (p.side !== "buy") return deny("na pump so existe comprar e vender a vista");
+    if (!t || t.mint !== p.market) return deny("the token sheet did not load — I do not buy blind");
+    if (p.side !== "buy") return deny("on pump there is only spot buying and selling");
 
     // Honeypot em nivel de contrato. O disclaimer nao pega isso; a checagem
     // pega. O raio-x do mint (wallet.inspectMint) vem no ctx: recusa por
@@ -50,12 +50,12 @@ export function check(agent, p, ctx, cfg) {
     // nao pelo programa — Token-2022 com metadata benigna e a maioria da
     // pump.fun hoje e nao tem nada de errado.
     if (ctx.mintReport && !ctx.mintReport.ok)
-      return deny(`o mint nao passa no raio-x: ${ctx.mintReport.dangers[0]}`);
+      return deny(`the mint fails the x-ray: ${ctx.mintReport.dangers[0]}`);
 
     // MAYHEM MODE ATIVO: regra da casa (Michel, 12/08/2026) — nao se compra
     // token no meio do evento. `mayhem_state` vem da ficha do token.
     if (t.mayhemState === "active")
-      return deny("MAYHEM MODE ativo neste token — a casa nao opera durante o evento");
+      return deny("MAYHEM MODE is live on this token — the house does not trade during the event");
 
     // DUAS COISAS DIFERENTES, que eu tratava como uma so (o Michel pegou):
     //
@@ -66,7 +66,7 @@ export function check(agent, p, ctx, cfg) {
     const pctOfPool = (size / curvaUsd) * 100;
     if (pctOfPool > cfg.maxPoolPct)
       return deny(
-        `ordem seria ${pctOfPool.toFixed(1)}% da curva (teto ${cfg.maxPoolPct}%) — o slippage comeria a entrada`
+        `the order would be ${pctOfPool.toFixed(1)}% of the curve (cap ${cfg.maxPoolPct}%) — slippage would eat the entry`
       );
 
     // 2) DINHEIRO DE VERDADE dentro do token (`realSol`). Zero = ninguem
@@ -87,8 +87,8 @@ export function check(agent, p, ctx, cfg) {
     const temNumero = dentroUsd > 0;
     if (cfg.minPoolUsd > 0 && temNumero && dentroUsd < cfg.minPoolUsd && size > dentroUsd)
       return deny(
-        `so ha ${fmt(dentroUsd)} de verdade dentro deste token (piso ${fmt(cfg.minPoolUsd)}) ` +
-        `e voce quer por ${fmt(size)} — sairia mais caro do que da pra tirar`
+        `there is only ${fmt(dentroUsd)} of real money inside this token (floor ${fmt(cfg.minPoolUsd)}) ` +
+        `and you want to put in ${fmt(size)} — it would cost more to leave than it is worth`
       );
     if (cfg.minPoolUsd > 0 && !temNumero) {
       const mcap = Number(t.usdMarketCap ?? 0);
@@ -96,13 +96,13 @@ export function check(agent, p, ctx, cfg) {
       const MCAP_MIN = 50000, PARADO_MAX = 45;
       if (!(mcap >= MCAP_MIN))
         return deny(
-          `nao consigo ler a liquidez deste token e o market cap e so ${fmt(mcap)} — ` +
-          "sem numero e sem tamanho, nao compro o que talvez nao de pra vender"
+          `I cannot read this token's liquidity and the market cap is only ${fmt(mcap)} — ` +
+          "no number and no size: I do not buy what I might not be able to sell"
         );
       if (paradoMin > PARADO_MAX)
         return deny(
-          `este token nao negocia ha ${Math.round(paradoMin)} minutos — ` +
-          "mercado parado e saida incerta, por maior que seja o market cap"
+          `this token has not traded in ${Math.round(paradoMin)} minutes — ` +
+          "a dead market means an uncertain exit, however big the market cap"
         );
     }
 
@@ -110,12 +110,12 @@ export function check(agent, p, ctx, cfg) {
     // ((agora - entrada)/entrada), entao a entrada TEM que ser o mcap do momento
     // da compra — nao um placeholder. Sem mcap, nao da pra precificar a saida.
     if (!(t.usdMarketCap > 0))
-      return deny("token sem market cap legivel — nao compro o que nao sei revender");
+      return deny("token with no readable market cap — I do not buy what I cannot price to sell");
 
     return ok({ price: t.usdMarketCap, fee: FEE.pump, curvaUsd, dentroUsd });
   }
 
-  return deny(`venue desconhecido: ${p.venue} — aqui so existe pump.fun, a vista`);
+  return deny(`unknown venue: ${p.venue} — here there is only pump.fun, spot`);
 }
 
 // ------------------------------- execucao ------------------------------------

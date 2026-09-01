@@ -642,8 +642,12 @@ function emit(kind, agentId, text, extra = {}) {
   if (["say", "aside", "note"].includes(kind) && typeof text === "string") {
     const r = peneirar(text);
     if (r.barrado) {
-      console.log(`[peneira] fala barrada (${r.termos.join(", ")}): ${text.slice(0, 120)}`);
-      text = kind === "say" ? "…" : "";
+      console.log(`[peneira] fala barrada (${r.termos.join(", ")}): ${text.slice(0, 200)}`);
+      /* NAO deixar balao vazio na tela. Um "note" em branco parece defeito e o
+         espectador nao sabe que houve censura — pior que a fala original.
+         Erro de sistema vira uma frase que uma pessoa diria; fala dela vira
+         reticencias, que se lê como alguem se interrompendo. */
+      text = kind === "say" ? "…" : "something did not work the way it should. Moving on.";
       extra = { ...extra, peneirado: true };
     }
   }
@@ -718,7 +722,12 @@ function publish() {
     model: state.shift?.model ?? cfg.model,
     effort: state.shift?.effort ?? cfg.effort,
     shift: state.shift ?? null,
-    paper: true,
+    /* O ROTULO TEM QUE DIZER A VERDADE.
+       Isto era `true` fixo, de quando tudo era simulacao — e o painel mostrava
+       a pilula "paper" enquanto REAL_TRADING=1 mandava ordem de verdade pra
+       blockchain com a carteira dela. Rotulo errado num painel de dinheiro
+       real e pior que rotulo nenhum. */
+    paper: !cfg.realTrading,
     resting: state.resting, // agentes dormindo (janela de descanso)
     agents: Object.fromEntries(
       ORDER.map((id) => {
@@ -2053,7 +2062,7 @@ async function apply(agent, action) {
        dia: nao e limite de custo (roda na maquina de casa, de graca), e que
        uma obra por dia e o que faz cada uma valer alguma coisa. */
     case "draw": {
-      if (agent.desenhouHoje === state.day)
+      if (!action._roteiro && agent.desenhouHoje === state.day)
         return emit("note", agent.id,
           "you already made today's piece. One a day — that is what makes each one worth anything.");
       const tema = String(action.text ?? "").trim();
@@ -2065,11 +2074,47 @@ async function apply(agent, action) {
       emit("did", agent.id, `starts drawing — ${trim(tema, 90)}`);
 
       try {
-        const { desenharObra } = await import("./lib/desenho.js");
-        const r = await desenharObra({ tema, porque: String(action.reason ?? "").trim() });
+        const { desenharObra, proximaDaFila, reproduzirDaFila } =
+          await import("./lib/desenho.js");
+
+        /* A FILA PRIMEIRO. Se ha obra pronta e aprovada, ela e reproduzida na
+           hora — o traco comeca no segundo em que ela senta, e nao depois de
+           quarenta segundos de painel vazio. So quando a fila acaba e que o
+           motor volta a calcular a obra do dia. */
+        const daFila = proximaDaFila();
+        const r = daFila
+          ? reproduzirDaFila(daFila)
+          : await desenharObra({ tema, porque: String(action.reason ?? "").trim() });
         if (!r.ok) return emit("note", agent.id, `the piece did not come together (${r.motivo})`);
         agent.obras = (agent.obras ?? 0) + 1;
-        emit("did", agent.id, `finished a piece — ${trim(tema, 70)}`, { obra: r.nome });
+        /* O que ela ANUNCIA e o tema da obra que esta na tela, nao o que ela
+           disse antes de sentar: com a fila, os dois podem divergir, e o
+           espectador acredita na imagem, nao no balao. */
+        const oQue = r.tema || tema;
+        emit("did", agent.id, `finished a piece — ${trim(oQue, 70)}`, { obra: r.nome });
+
+        /* A OBRA VIRA NFT NA HORA EM QUE ELA LARGA A PRANCHETA.
+           Pedido do Michel (01/09/2026). O mint sai da carteira DELA, entao a
+           autoria fica on-chain sem depender de ninguem comprar nada.
+           Nao derruba o turno se falhar: uma obra sem mint continua sendo uma
+           obra, e a hora do desenho ja acabou. O motivo aparece no feed, que e
+           onde eu e ele olham — falha muda nunca foi opcao aqui. */
+        try {
+          const nft = await import("./lib/nft.js");
+          const impedimento = nft.porQueNaoPode();
+          if (!impedimento) {
+            const ficha = { arquivo: `${r.nome}.png`, tema: oQue, dia: state.day, porque: "" };
+            const m = await nft.mintarObra(ficha);
+            if (m.ok && !m.jaExistia)
+              emit("did", agent.id, `minted it — ${m.asset.slice(0, 8)}…`, { asset: m.asset });
+            else if (!m.ok)
+              emit("system", agent.id, `— the piece could not be minted: ${m.motivo} —`);
+          } else {
+            emit("system", agent.id, `— not minting: ${impedimento} —`);
+          }
+        } catch (e) {
+          emit("system", agent.id, `— minting failed: ${String(e.message).slice(0, 90)} —`);
+        }
       } catch (e) {
         emit("note", agent.id, `could not finish the drawing (${e.message})`);
       }
@@ -2380,7 +2425,7 @@ async function apply(agent, action) {
               const moedas = await explorarPump(aba, { max: 20, onde: ondeOlhar });
               agent.reading = `pump.fun/${ondeOlhar}`;
               if (!moedas.length) {
-                agent.scratch = `[pump ${ondeOlhar}: nao carregou nada agora]`;
+                agent.scratch = `[pump ${ondeOlhar}: nothing loaded just now]`;
                 return;
               }
               agent.scratch = [
@@ -2587,8 +2632,8 @@ async function apply(agent, action) {
           });
           if (!r.publicado) {
             const porque = /hold at least \$1|requires holding/i.test(r.tela?.texto || "")
-              ? `a pump pediu $1 de ${moeda.symbol || "token"} e a compra nao chegou na conta dela`
-              : "a pump nao aceitou a call";
+              ? `pump asked for $1 of ${moeda.symbol || "token"} and the buy had not landed in her balance`
+              : "pump did not accept the call";
             return emit("denied", agent.id, `could not post the call — ${porque}`);
           }
           emit("did", agent.id, `posted the call on pump.fun — ${r.moeda}`);
@@ -2694,7 +2739,7 @@ async function apply(agent, action) {
         // permanent delegate, taxa, freeze) reprovam a compra. Falhou a leitura?
         // Trata como reprovado — nao se compra o que nao se conseguiu auditar.
         try { ctx.mintReport = await onchain.inspectMint(p.market); }
-        catch (e) { ctx.mintReport = { ok: false, dangers: [`nao consegui auditar o mint (${e.message})`] }; }
+        catch (e) { ctx.mintReport = { ok: false, dangers: [`I could not audit the mint (${e.message})`] }; }
       }
       /* O RAIO-X DA PAGINA, ANTES DE COMPRAR.
          Regra do Michel (31/08/2026), depois de me ver escolher tres armadilhas
@@ -3199,7 +3244,11 @@ async function turnoDoRoteiro(agent, roteiro) {
   emit("system", agent.id, `— SCRIPTED STEP: ${passo.type} —`);
   if (passo.say) agent.cenaFala = { texto: primeiraFrase(passo.say, 170), t: Date.now() };
   if (passo.say) emit("say", agent.id, passo.say, { scripted: true });
-  await apply(agent, { ...acao, remark: undefined });
+  /* `wait` NAO e acao: ela continua exatamente onde esta. E o unico jeito de
+     um roteiro acompanhar algo demorado — o desenho leva turnos, e qualquer
+     acao de verdade tiraria ela do tapete no meio do traco. */
+  if (passo.type === "wait") return;
+  await apply(agent, { ...acao, remark: undefined, _roteiro: true });
 }
 
 /* ===========================================================================
@@ -4411,6 +4460,19 @@ async function loop() {
            sentar volta a ser instantaneo. A sessao so morre quando ela dorme,
            que e onde a economia de verdade estava (8 horas por dia). */
         state.foraDaMesaDesde = state.foraDaMesaDesde || Date.now();
+      }
+
+      /* A TELA DO DESENHO SEGUE A MESMA REGRA DA CADEIRA: aparece quando ela
+         senta no tapete e some quando ela levanta.
+         Aqui eu FECHO de verdade, ao contrario do navegador. O motivo de
+         deixar a sessao do Browserbase de pe era os 20s pra reabrir; a
+         transmissao e um processo local que sobe na hora, e deixar um
+         servidor vivo servindo o desenho de ontem e so processo pendurado. */
+      if (cenaAgora?.movel !== "tapete") {
+        try {
+          const { pararTransmissao } = await import("./lib/desenho.js");
+          pararTransmissao();
+        } catch {}
       }
     } catch (e) {
       /* nunca derruba o turno por causa do navegador — mas tambem nunca

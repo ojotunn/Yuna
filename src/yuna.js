@@ -35,6 +35,11 @@ process.env.ENV_FILE = ENV_SHOW;      // o filho herda o mesmo arquivo
 
 const PORTA = Number(process.env.PORT || 8433);
 const TELA = path.join(ROOT, "public", "yuna-live.html");
+/* O ACERVO mora na maquina que desenha (a GPU e local). No Railway a
+   pasta simplesmente nao existe e a store aparece vazia — que e o
+   comportamento certo, e nao um erro. */
+const ACERVO = process.env.ACERVO_DIR ||
+  "C:/Higgsfield Games/atelier/acervo/yuna";
 const ESTADO = process.env.STATE_FILE || path.join(ROOT, "src", "data", "state-yuna.json");
 
 let filho = null;
@@ -85,11 +90,87 @@ function enviar(res, codigo, corpo) {
   res.end(JSON.stringify(corpo));
 }
 
-const servidor = http.createServer((req, res) => {
+const servidor = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
-  // A TELA. E o que o OBS captura e o que qualquer um que abrir o site ve.
-  if (url.pathname === "/" || url.pathname === "/live") {
+  /* O SITE. Primeira coisa que quem chega pelo dominio ve: a sala embutida,
+     quem ela e, e as obras. A live continua crua em `/live` — e o que o OBS
+     captura, e mexer nessa rota derrubaria a transmissao. */
+  if (url.pathname === "/" || url.pathname === "/site") {
+    const arq = path.join(ROOT, "public", "site.html");
+    if (!fs.existsSync(arq)) return enviar(res, 404, { erro: "o site nao foi montado" });
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate",
+    });
+    return res.end(fs.readFileSync(arq));
+  }
+
+  /* O ACERVO: o que ela ja desenhou, mais novo primeiro. E a mesma pasta que
+     o motor grava quando ela larga a prancheta. */
+  if (url.pathname === "/api/obras") {
+    let obras = [];
+    try {
+      obras = fs.readdirSync(ACERVO)
+        .filter((f) => f.endsWith(".json"))
+        .map((f) => { try { return JSON.parse(fs.readFileSync(path.join(ACERVO, f), "utf8")); }
+                      catch { return null; } })
+        .filter((o) => o && o.arquivo && fs.existsSync(path.join(ACERVO, o.arquivo)))
+        .sort((a, b) => String(b.dia).localeCompare(String(a.dia)));
+    } catch { /* sem acervo ainda */ }
+    return enviar(res, 200, { obras });
+  }
+
+  /* A IMAGEM da obra. Nome saneado: `/obras/../..` nao pode virar leitura de
+     arquivo fora do acervo. */
+  if (url.pathname.startsWith("/obras/")) {
+    const nome = path.basename(decodeURIComponent(url.pathname.slice(7)));
+    const arq = path.join(ACERVO, nome);
+    if (!nome.endsWith(".png") || !fs.existsSync(arq))
+      return enviar(res, 404, { erro: "obra nao encontrada" });
+    res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=3600" });
+    return res.end(fs.readFileSync(arq));
+  }
+
+  /* O METADATA DO NFT. E o `uri` gravado dentro do asset, entao esta rota nao
+     pode sumir nem mudar de formato: NFT ja mintado nao troca de endereco.
+     Le a mesma ficha do acervo que a store usa — uma fonte so. */
+  if (url.pathname.startsWith("/api/meta/")) {
+    const id = path.basename(decodeURIComponent(url.pathname.slice(10)))
+      .replace(/\.json$/i, "");
+    const ficha = path.join(ACERVO, `${id}.json`);
+    if (!fs.existsSync(ficha)) return enviar(res, 404, { erro: "obra nao encontrada" });
+    try {
+      const obra = JSON.parse(fs.readFileSync(ficha, "utf8"));
+      const { metadataDe } = await import("./lib/nft.js");
+      const base = (process.env.SITE_URL || `http://${req.headers.host}`).replace(/\/+$/, "");
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8",
+                           "cache-control": "public, max-age=300" });
+      return res.end(JSON.stringify(metadataDe(obra, base), null, 2));
+    } catch (e) {
+      return enviar(res, 500, { erro: String(e.message).slice(0, 120) });
+    }
+  }
+
+  /* O TOKEN dela, pro CA no topo do site. Vazio enquanto nao existir — CA em
+     branco num site de token parece projeto abandonado, entao o site esconde. */
+  if (url.pathname === "/api/token") {
+    /* A carteira DELA, publica, pra quem quiser mandar apoio. Endereco publico
+       de Solana nao e segredo — a chave privada e, e essa nunca sai do .env. */
+    let carteira = null;
+    try {
+      const st = filho ? ultimoEstado : JSON.parse(fs.readFileSync(ESTADO, "utf8"));
+      carteira = st?.agents?.yuna?.address || null;
+    } catch { /* sem estado ainda */ }
+    return enviar(res, 200, {
+      mint: process.env.LIVE_CHAT_MINT || null,
+      x: process.env.X_URL || null,
+      carteira,
+    });
+  }
+
+  // A TELA. E o que o OBS captura e o que o site embute num iframe.
+  if (url.pathname === "/live") {
     if (!fs.existsSync(TELA)) return enviar(res, 404, { erro: "a tela ainda nao foi gerada" });
     /* NUNCA CACHEAR. A tela tem 3 MB e o navegador guardava a versao antiga:
        eu corrigia, mandava recarregar, e ele via exatamente a mesma coisa. */

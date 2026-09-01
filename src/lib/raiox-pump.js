@@ -74,13 +74,13 @@ export async function raioX(page, mint) {
 export function pareceRug(x, idadeHoras = null) {
   const sinais = [];
   if (x.compras > 50 && x.vendas < x.compras * 0.08)
-    sinais.push(`${x.compras} compras contra ${x.vendas} vendas`);
+    sinais.push(`${x.compras} buys against ${x.vendas} sells`);
   if (x.volCompra > 0 && x.volVenda < x.volCompra * 0.1)
-    sinais.push("o dinheiro entra e nao sai");
+    sinais.push("the money goes in and does not come out");
   if (idadeHoras != null && idadeHoras < 6 && x.mcap > 5e6)
-    sinais.push(`$${(x.mcap / 1e6).toFixed(0)}M em ${Math.round(idadeHoras)}h de vida`);
+    sinais.push(`$${(x.mcap / 1e6).toFixed(0)}M at ${Math.round(idadeHoras)}h old`);
   if (x.compradores > 40 && x.vendedores < x.compradores * 0.1)
-    sinais.push(`${x.compradores} compradores e so ${x.vendedores} vendedores`);
+    sinais.push(`${x.compradores} buyers and only ${x.vendedores} sellers`);
   return { rug: sinais.length >= 2, sinais };
 }
 
@@ -89,19 +89,19 @@ export function pareceRug(x, idadeHoras = null) {
 export function temSaida(x, { minVendedores = 15, minVendas = 30, minHolders = 200, idadeHoras = null } = {}) {
   const r = pareceRug(x, idadeHoras);
   if (r.rug)
-    return { ok: false, motivo: `desenho de rug — ${r.sinais.join("; ")}`, x };
-  if (!x.leu) return { ok: false, motivo: "nao consegui ler os numeros da pagina desta moeda", x };
+    return { ok: false, motivo: `this has the shape of a rug — ${r.sinais.join("; ")}`, x };
+  if (!x.leu) return { ok: false, motivo: "I could not read the numbers off this coin's page", x };
   if (x.vendas < minVendas)
-    return { ok: false, motivo: `so ${x.vendas} vendas registradas — quase ninguem saiu daqui`, x };
+    return { ok: false, motivo: `only ${x.vendas} sells on record — almost nobody has gotten out of here`, x };
   if (x.vendedores < minVendedores)
-    return { ok: false, motivo: `so ${x.vendedores} pessoas venderam — poucas maos conseguiram sair`, x };
+    return { ok: false, motivo: `only ${x.vendedores} people have sold — too few hands have made it out`, x };
   if (x.holders < minHolders)
-    return { ok: false, motivo: `so ${x.holders} holders — concentrado demais`, x };
+    return { ok: false, motivo: `only ${x.holders} holders — too concentrated`, x };
   /* Volume de venda quase nulo com muita compra e o desenho classico do
      candle unico: todo mundo entrando, ninguem saindo. */
   if (x.volCompra > 0 && x.volVenda < x.volCompra * 0.15)
     return { ok: false, motivo:
-      `entrou $${Math.round(x.volCompra).toLocaleString("en-US")} e saiu so ` +
-      `$${Math.round(x.volVenda).toLocaleString("en-US")} — dinheiro que entra e nao sai`, x };
-  return { ok: true, motivo: `${x.vendas} vendas de ${x.vendedores} pessoas, ${x.holders} holders`, x };
+      `$${Math.round(x.volCompra).toLocaleString("en-US")} went in and only ` +
+      `$${Math.round(x.volVenda).toLocaleString("en-US")} — money that goes in and does not come out`, x };
+  return { ok: true, motivo: `${x.vendas} sells from ${x.vendedores} people, ${x.holders} holders`, x };
 }
