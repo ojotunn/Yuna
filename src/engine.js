@@ -195,12 +195,52 @@ const BOUNTIES = [
 // cada turno (no loop). So tuning de renda/aluguel — nada estrutural (carteira,
 // modelo, tick, treasury). Campo em branco mantem o valor atual, nao zera. Assim
 // da pra ajustar no painel (ou editar o .env) sem Stop->Start.
+/* AJUSTE AO VIVO NO RAILWAY. (01/09/2026)
+   Este arquivo mora no VOLUME e e escrito pelo servidor (POST /api/ajustes).
+   Sem ele o hot-reload acima nao servia para nada em producao: ele le arquivos
+   .env, e no Railway o `.env.yuna` nao existe — as variaveis vem do ambiente, e
+   mexer numa delas no painel reinicia o servico, que e exatamente o que o
+   hot-reload existia para evitar.
+   Lido por ULTIMO de proposito: quem mexe aqui no meio do show quer que valha
+   agora, por cima de qualquer arquivo. */
+const AJUSTES_FILE = () => process.env.AJUSTES_FILE || path.join(DATA, "ajustes.json");
+
+/* As unicas chaves que o reloadLiveConfig reaplica de verdade. Mandar outra
+   coisa (X_ENABLED, por exemplo, que so e lido no boot) seria aceito e nao
+   mudaria nada — e o Michel passaria o show achando que mudou. */
+export const AJUSTAVEIS = [
+  "WORK_RATE_USD", "WORK_GIGS_PER_DAY", "WORK_HOURS_PER_DAY",
+  "RUGCHECK_RATE_USD", "RUGCHECK_PER_DAY", "SELL_RATE_USD", "SELL_PER_DAY",
+  "BOUNTY_RATE_USD", "BOUNTY_PER_DAY",
+  "RENT_MULTIPLIER", "HOUSE_BASE_DAILY_USD", "HOUSE_NOTE", "DAY_HOURS",
+  "WORLD_EVENT_EVERY_TICKS", "SCHEDULE",
+  "MAX_REAL_TRADE_USD", "REAL_TRADING", "LIVE_TRADE", "TRADING_ENABLED",
+  "MIN_POOL_USD", "MAX_POOL_PCT", "DAILY_LOSS_LIMIT_PCT",
+  "MODEL", "EFFORT", "TICK_SECONDS",
+  "REST_ENABLED", "ACTIVE_START_HOUR", "ACTIVE_END_HOUR",
+  "X_POSTS_PER_DAY_EACH", "CHAT_MSGS_PER_TURN", "SLIPPAGE_ESCADA",
+];
+
 function reloadLiveConfig() {
   let env;
   try {
     const parse = (p) => { try { return dotenv.parse(fs.readFileSync(p)); } catch { return {}; } };
-    env = { ...parse(ENV_EXAMPLE_PATH), ...parse(ENV_PATH) };
+    let ajustes = {};
+    try {
+      const cru = JSON.parse(fs.readFileSync(AJUSTES_FILE(), "utf8"));
+      /* So o que e ajustavel: uma chave desconhecida aqui nao pode virar
+         configuracao por acidente. */
+      for (const k of AJUSTAVEIS) if (cru[k] !== undefined) ajustes[k] = String(cru[k]);
+    } catch { /* sem ajustes e o normal */ }
+    env = { ...parse(ENV_EXAMPLE_PATH), ...parse(ENV_PATH), ...ajustes };
   } catch { return; }
+
+  /* SLIPPAGE_ESCADA nao entra no cfg: o executor le direto do ambiente a cada
+     compra. Entao o ajuste ao vivo precisa escrever no ambiente do processo. */
+  try {
+    const cru = JSON.parse(fs.readFileSync(AJUSTES_FILE(), "utf8"));
+    if (cru.SLIPPAGE_ESCADA) process.env.SLIPPAGE_ESCADA = String(cru.SLIPPAGE_ESCADA);
+  } catch { /* idem */ }
   const n = (k, cur) => {
     const raw = env[k];
     if (raw === undefined || String(raw).trim() === "") return cur;
@@ -4925,7 +4965,7 @@ const log = (m) => process.stdout.write(`${redact(String(m))}\n`);
 const trim = (s, n) => (String(s).length > n ? String(s).slice(0, n) + "…" : String(s));
 
 // Exportado para teste. So roda o mundo quando chamado direto, nunca ao importar.
-export { state, cfg, collectRent, postDailyBill, rollDay, runSchedule, apply, newAgent, buildSystem,
+export { state, cfg, collectRent, postDailyBill, rollDay, runSchedule, apply, newAgent, buildSystem, reloadLiveConfig,
   incomeMix, publish, saveCheckpoint, loadCheckpoint, situationFor, ORDER, SOZINHA };
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

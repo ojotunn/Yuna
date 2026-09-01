@@ -385,6 +385,70 @@ const servidor = http.createServer(async (req, res) => {
     return;
   }
 
+  /* ===================== AJUSTE AO VIVO =====================
+     Mexer num numero SEM reiniciar o show. No Railway, mudar uma variavel no
+     painel reinicia o servico — e reiniciar no meio da live congela a tela de
+     quem esta assistindo. Isto escreve num arquivo do volume que o motor le no
+     ciclo seguinte, mesmo padrao do /api/ritmo.
+
+     GET devolve o que esta valendo e a lista do que da pra mexer.
+     POST {"MAX_REAL_TRADE_USD":"1"} muda; {"MAX_REAL_TRADE_USD":null} devolve
+     ao valor do ambiente. */
+  if (url.pathname === "/api/ajustes" && req.method === "POST") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    let corpo = "";
+    for await (const p of req) { corpo += p; if (corpo.length > 8000) break; }
+    let dado = {};
+    try { dado = JSON.parse(corpo || "{}"); } catch { return enviar(res, 400, { erro: "corpo torto" }); }
+
+    const arq = process.env.AJUSTES_FILE || path.join(ROOT, "src", "data", "ajustes.json");
+    try {
+      const { AJUSTAVEIS } = await import("./engine.js");
+      let atual = {};
+      try { atual = JSON.parse(fs.readFileSync(arq, "utf8")); } catch { /* primeiro uso */ }
+
+      /* RECUSA O QUE NAO ADIANTA. Aceitar uma chave que o motor so le no boot
+         seria pior que recusar: o Michel mexeria, nada mudaria, e ele passaria
+         o show achando que mudou. */
+      const fora = Object.keys(dado).filter((k) => !AJUSTAVEIS.includes(k));
+      if (fora.length)
+        return enviar(res, 400, {
+          erro: `estas so mudam reiniciando: ${fora.join(", ")}`,
+          ajustaveis: AJUSTAVEIS,
+        });
+
+      const mudou = [];
+      for (const [k, v] of Object.entries(dado)) {
+        if (v === null || v === "") { delete atual[k]; mudou.push(`${k}: de volta ao ambiente`); }
+        else { atual[k] = String(v); mudou.push(`${k}=${v}`); }
+      }
+      fs.mkdirSync(path.dirname(arq), { recursive: true });
+      fs.writeFileSync(arq, JSON.stringify(atual, null, 2));
+      console.log(`[ajustes] ${mudou.join(" · ")}`);
+      return enviar(res, 200, { ok: true, mudou, valendo: atual, quando: "no proximo turno dela, sem restart" });
+    } catch (e) {
+      return enviar(res, 500, { erro: String(e.message).slice(0, 160) });
+    }
+  }
+
+  if (url.pathname === "/api/ajustes") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    const arq = process.env.AJUSTES_FILE || path.join(ROOT, "src", "data", "ajustes.json");
+    let valendo = {};
+    try { valendo = JSON.parse(fs.readFileSync(arq, "utf8")); } catch { /* nenhum ajuste */ }
+    let ajustaveis = [];
+    try { ({ AJUSTAVEIS: ajustaveis } = await import("./engine.js")); } catch { /* motor nao carregou */ }
+    return enviar(res, 200, {
+      valendo,
+      ajustaveis,
+      nota: "estas valem no proximo turno, sem restart. O resto exige reiniciar o servico.",
+    });
+  }
+
   /* ===================== O PAINEL DO X =====================
      O X barrou o login automatizado (deteccao de navegador, nao de conta nem
      de IP — o Michel confirmou deslogando do Chrome dele e religando). Entao
