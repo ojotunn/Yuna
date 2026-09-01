@@ -362,6 +362,42 @@ const SHOW_START = (() => {
 const HORAS_ACORDADA = num("AWAKE_HOURS", 16);
 const HORAS_DORMINDO = num("SLEEP_HOURS", 8);
 
+/* O RITMO DAS PRIMEIRAS HORAS. Ver o comentario da funcao. */
+const TICK_ESTREIA = num("TICK_SECONDS_ESTREIA", 20);
+const HORAS_ESTREIA = num("ESTREIA_HORAS", 3);
+
+/* Quantos segundos entre um turno e outro, AGORA.
+   Nas primeiras horas depois do lancamento o ritmo e mais rapido: e quando
+   mais gente esta olhando, e uma personagem que age a cada 45s parece lenta
+   pra quem acabou de chegar. Passada a estreia, volta ao normal — que e melhor
+   pro show a longo prazo. Custa mais, e de proposito: e o unico momento em que
+   a audiencia justifica o gasto. */
+/* O ritmo mandado ao vivo (pelo /api/ritmo). Vence tudo enquanto existir. */
+const RITMO_FILE = () => path.join(DATA, "ritmo.json");
+let ritmoAoVivo = null;
+export function lerRitmoAoVivo() {
+  try {
+    const j = JSON.parse(fs.readFileSync(RITMO_FILE(), "utf8"));
+    const s = Number(j.tickSeconds);
+    const novo = Number.isFinite(s) && s >= 5 && s <= 600 ? s : null;
+    if (novo !== ritmoAoVivo) {
+      ritmoAoVivo = novo;
+      if (novo) log(`ritmo mudou ao vivo: ${novo}s por turno`);
+    }
+  } catch { ritmoAoVivo = null; }
+}
+
+function tickAgora() {
+  /* O QUE FOI MANDADO AO VIVO VENCE. E o unico jeito de mudar o ritmo sem
+     reiniciar — e reiniciar no meio da live congela a tela de quem assiste. */
+  if (ritmoAoVivo) return ritmoAoVivo;
+  if (!SHOW_START || HORAS_ESTREIA <= 0) return cfg.tickSeconds;
+  const horas = (Date.now() - SHOW_START) / 3600000;
+  if (horas < 0 || horas >= HORAS_ESTREIA) return cfg.tickSeconds;
+  return Math.max(5, Math.min(cfg.tickSeconds, TICK_ESTREIA));
+}
+
+
 function isResting() {
   if (!cfg.restEnabled) return false;
 
@@ -4614,6 +4650,8 @@ async function loop() {
     processBankDecisions();
     // Recargas da treasury (console -> treasury-topups.json). Mesmo compasso.
     processTreasuryTopups();
+    // e o ritmo, que pode ter sido mudado ao vivo sem restart
+    lerRitmoAoVivo();
 
     // O RELOGIO E O MUNDO — as duas fontes de novidade que nao custam modelo.
     // Vem ANTES de montar o turno: marco batido e eco novo entram no mesmo
@@ -4683,13 +4721,13 @@ async function loop() {
     // Instrumentacao pro OPERADOR (terminal), nunca pro palco. Otimizar sem
     // medir foi como se perdeu uma tarde inteira em 12/08/2026.
     log(`[ciclo ${state.tick}] mundo ${msMundo}ms · turnos ${msTurnos}ms · ` +
-      `pausa ${cfg.tickSeconds * 1000}ms · total ${Date.now() - tCiclo + cfg.tickSeconds * 1000}ms`);
+      `pausa ${tickAgora() * 1000}ms · total ${Date.now() - tCiclo + tickAgora() * 1000}ms`);
 
     // Propostas velhas caducam — ninguem fica com uma tese aberta pra sempre.
     state.proposals = state.proposals.filter((p) => state.tick - p.tick <= cfg.rebuttalTicks + 4);
 
     publish();
-    await new Promise((r) => setTimeout(r, cfg.tickSeconds * 1000));
+    await new Promise((r) => setTimeout(r, tickAgora() * 1000));
   }
 }
 

@@ -325,6 +325,36 @@ const servidor = http.createServer(async (req, res) => {
     });
   }
 
+  /* O RITMO, ao vivo. `POST /api/ritmo {"tickSeconds":45}` — o motor le no
+     proximo ciclo e muda sem reiniciar. Reiniciar no meio da live congelaria a
+     tela na frente de quem esta assistindo.
+     `{"tickSeconds":null}` devolve o controle pro automatico (estreia rapida,
+     depois o ritmo do .env). */
+  if (url.pathname === "/api/ritmo" && req.method === "POST") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+    let corpo = "";
+    for await (const p of req) { corpo += p; if (corpo.length > 4000) break; }
+    let s = null;
+    try { s = JSON.parse(corpo || "{}").tickSeconds; } catch { /* corpo torto */ }
+    const arq = path.join(ROOT, "src", "data", "ritmo.json");
+    try {
+      if (s === null || s === undefined || s === "") {
+        try { fs.unlinkSync(arq); } catch {}
+        return enviar(res, 200, { ok: true, ritmo: "automatico" });
+      }
+      const n = Number(s);
+      if (!Number.isFinite(n) || n < 5 || n > 600)
+        return enviar(res, 400, { erro: "tickSeconds tem que ser entre 5 e 600" });
+      fs.mkdirSync(path.dirname(arq), { recursive: true });
+      fs.writeFileSync(arq, JSON.stringify({ tickSeconds: n, quando: Date.now() }, null, 2));
+      return enviar(res, 200, { ok: true, tickSeconds: n, vale: "no proximo ciclo, sem restart" });
+    } catch (e) {
+      return enviar(res, 500, { erro: String(e.message).slice(0, 120) });
+    }
+  }
+
   if (url.pathname === "/api/ligar" && req.method === "POST") return enviar(res, 200, ligar());
   if (url.pathname === "/api/desligar" && req.method === "POST") return enviar(res, 200, desligar());
   if (url.pathname === "/api/log") return enviar(res, 200, { log: log.slice(-120) });
