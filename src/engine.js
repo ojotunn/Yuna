@@ -119,6 +119,10 @@ const cfg = {
   // os canais. Ver clockIn(). 0 = sem jornada (trabalho ilimitado).
   workHoursPerDay: num("WORK_HOURS_PER_DAY", 3),
   xEnabled: process.env.X_ENABLED === "1",
+  /* A HORA DO DESENHO, ligavel ao vivo. Pedido do Michel em 01/09/2026 pra
+     tirar "por enquanto" — entao interruptor, nao remocao: tirar do enum
+     exigiria deploy pra voltar. Vazio ou "1" = ligado. */
+  drawEnabled: String(process.env.DRAW_ENABLED ?? "1").trim() !== "0",
   xPostsPerDayEach: num("X_POSTS_PER_DAY_EACH", 7),
   dailyLossLimitPct: num("DAILY_LOSS_LIMIT_PCT", 30),
   interventionsPerDay: num("INTERVENTIONS_PER_DAY", 3),
@@ -224,7 +228,7 @@ export const AJUSTAVEIS = [
      ciclo trata explicitamente "o mint mudou a quente", entrando na sala
      sozinho. Com isto, marcar o token no dia do lancamento deixa de exigir
      restart — que e o que congela a tela de quem esta assistindo. */
-  "LIVE_CHAT_MINT", "ROOM_POST_ENABLED",
+  "LIVE_CHAT_MINT", "ROOM_POST_ENABLED", "DRAW_ENABLED",
 ];
 
 function reloadLiveConfig() {
@@ -283,6 +287,8 @@ function reloadLiveConfig() {
   }
   cfg.dayHours = n("DAY_HOURS", cfg.dayHours);
   cfg.xPostsPerDayEach = n("X_POSTS_PER_DAY_EACH", cfg.xPostsPerDayEach);
+  cfg.drawEnabled = env.DRAW_ENABLED === undefined || String(env.DRAW_ENABLED).trim() === ""
+    ? cfg.drawEnabled : String(env.DRAW_ENABLED).trim() !== "0";
   // Strings e booleano tambem hot-reload — trocar modelo/effort/ritmo/janela ao
   // vivo, sem restart (nunca precisar reiniciar a live pra ajustar).
   const s = (k, cur) => {
@@ -361,6 +367,9 @@ const HORA_DESENHO = num("DRAW_HOUR", 20);
 const DESENHO_APOS_H = num("DRAW_AFTER_HOURS", 12);
 
 function naHoraDoDesenho() {
+  /* Desligado: a hora nao existe. Sem isto o motor continuaria recusando
+     trabalho de mercado numa hora reservada pra uma coisa que nao acontece. */
+  if (!cfg.drawEnabled) return false;
   if (isResting()) return false;
 
   /* JORNADA RELATIVA: a hora do desenho anda junto com ela. Com a jornada
@@ -2510,6 +2519,10 @@ async function apply(agent, action) {
        dia: nao e limite de custo (roda na maquina de casa, de graca), e que
        uma obra por dia e o que faz cada uma valer alguma coisa. */
     case "draw": {
+      /* Rede de seguranca do interruptor: o menu ja nao oferece, mas se algo
+         fizer ela emitir mesmo assim, aqui recusa em vez de desenhar. */
+      if (!cfg.drawEnabled)
+        return emit("note", agent.id, "the board is put away for now — not today");
       if (!action._roteiro && agent.desenhouHoje === state.day)
         return emit("note", agent.id,
           "you already made today's piece. One a day — that is what makes each one worth anything.");
