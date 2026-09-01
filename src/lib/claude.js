@@ -148,6 +148,10 @@ const ACTION_SCHEMA = {
             // (o prompt diz onde ela acaba); isto e o que fazer com esse
             // conhecimento. Reusa `text` (o que falta) e `reason` (por que).
             // Enum e de graca; campo com union nao seria.
+            // PERGUNTAR A ALGUEM DE FORA. Reusa `query` (a pergunta) e
+            // `reason` (por que ela precisa saber). A resposta chega num turno
+            // depois — quem responde leva minutos, e ela nao espera parada.
+            "consult",
             "ask",
             "post",
             "remember",
@@ -266,3 +270,73 @@ export async function freeText({ model, system, user, maxTokens = 400 }) {
   const text = res.content.find((b) => b.type === "text")?.text?.trim() ?? "";
   return { text, cost };
 }
+
+// ============================================================================
+// O CONSULTOR. (01/09/2026)
+//
+// A Yuna pode fazer uma pergunta dificil a alguem de fora. Quem responde e um
+// modelo DIFERENTE do dela (Fable 5.1 por padrao) — duas instancias do mesmo
+// modelo tendem a concordar entre si, e concordar nao ajuda ninguem. Modelo
+// diferente discorda, e a discordancia e o produto.
+//
+// ASSINCRONO DE PROPOSITO: o Fable leva minutos numa pergunta dificil e o laco
+// dela dispara a cada 30s. Ela pergunta, segue trabalhando, e a resposta entra
+// no turno em que chegar.
+//
+// O CONSULTOR NAO SABE DO DINHEIRO. Recebe quem ela e, o que ela consegue
+// fazer e a pergunta — nao a carteira, nao o saldo, nao a chave. Ele responde
+// uma pessoa; nao opera uma conta.
+// ============================================================================
+const MODELO_CONSULTOR = process.env.CONSULTANT_MODEL || "claude-fable-5-1";
+
+const QUEM_SOU = [
+  "You are answering Yuna. She is an autonomous agent who lives in one room,",
+  "on a public stream, trading a real Solana wallet with a small amount of real",
+  "money in it. She draws, she reads the internet through one browser tab, and",
+  "she talks to people in a live chat. She knows she is a program.",
+  "",
+  "She cannot run code. She cannot install anything. Everything she can do is a",
+  "fixed list of actions someone else wrote, and she knows that too. So an answer",
+  "that begins 'just write a script that' is useless to her — she has no hands",
+  "for that. What helps is a way of thinking she can carry into her next decision,",
+  "or a precise description of a thing that does not exist yet, which she can then",
+  "ask a human to build.",
+  "",
+  "Answer in English, under 200 words, in plain prose — no headers, no bullet",
+  "lists. Be concrete and be willing to tell her she is wrong; she is better",
+  "served by disagreement than by encouragement. If the question cannot be",
+  "answered well, say what is missing instead of guessing.",
+].join("\n");
+
+/* Pergunta ao consultor. Devolve { texto, custo } ou null. Nunca lanca:
+   consulta que derruba o turno seria pior que consulta nenhuma. */
+export async function consultar(pergunta, contexto = "") {
+  const chave = process.env.ANTHROPIC_API_KEY;
+  if (!chave || !String(pergunta || "").trim()) return null;
+  try {
+    /* Reusa o mesmo cliente do resto do arquivo — um segundo cliente teria
+       seu proprio pool de conexao sem nenhum ganho. */
+    const res = await getClient().messages.create({
+      model: MODELO_CONSULTOR,
+      max_tokens: 1400,
+      system: QUEM_SOU,
+      messages: [{
+        role: "user",
+        content: contexto
+          ? `${pergunta}\n\n(context she gave: ${contexto})`
+          : String(pergunta),
+      }],
+    });
+    /* O Fable pode RECUSAR (stop_reason "refusal", HTTP 200) — sem checar,
+       o codigo leria content vazio e devolveria uma resposta em branco. */
+    if (res.stop_reason === "refusal") {
+      return { texto: "(the consultant declined to answer that one)", custo: 0 };
+    }
+    const texto = (res.content || []).find((b) => b.type === "text")?.text?.trim() || "";
+    if (!texto) return null;
+    return { texto, custo: priceUsage(MODELO_CONSULTOR, res.usage) };
+  } catch {
+    return null;
+  }
+}
+

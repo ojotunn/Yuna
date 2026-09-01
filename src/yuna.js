@@ -693,6 +693,19 @@ const servidor = http.createServer(async (req, res) => {
     return enviar(res, 200, { atual, versoes: versoes.reverse() });
   }
 
+  /* AS CONVERSAS DELA com quem esta de fora. Publica: uma agente sendo
+     contrariada por outro modelo e o que faz este show diferente de um bot
+     que concorda consigo mesmo. */
+  if (url.pathname === "/api/consultas") {
+    const chk = process.env.CHECKPOINT_FILE || path.join(ROOT, "src", "data", "checkpoint-yuna.json");
+    let cs = [];
+    try { cs = JSON.parse(fs.readFileSync(chk, "utf8"))?.consultas ?? []; } catch { /* ainda nao perguntou */ }
+    return enviar(res, 200, {
+      conversas: cs.filter((c) => c.estado === "respondida")
+        .sort((a, b) => b.t - a.t).slice(0, 40),
+    });
+  }
+
   /* ===================== O PAINEL DO X =====================
      O X barrou o login automatizado (deteccao de navegador, nao de conta nem
      de IP — o Michel confirmou deslogando do Chrome dele e religando). Entao

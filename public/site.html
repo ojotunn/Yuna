@@ -279,6 +279,13 @@
     <div id="pedidos"></div>
   </div>
 
+  <!-- AS CONVERSAS. Ela pergunta a alguem de fora e a resposta discorda dela
+       com frequencia — e o oposto de um bot que concorda consigo mesmo. -->
+  <div class="caixa" id="cx-conversas" style="display:none">
+    <h2>she asked someone <span class="sel" id="sel-conversas"></span></h2>
+    <div id="conversas"></div>
+  </div>
+
   <!-- QUEM ELA JA FOI. Idem: so existe depois da primeira reescrita. -->
   <div class="caixa" id="cx-versoes" style="display:none">
     <h2>versions of her <span class="sel" id="sel-versoes"></span></h2>
@@ -466,6 +473,51 @@ fetch("/api/pedidos", { cache: "no-store" })
    O texto inteiro da persona nao vem — so o diff. Ela descreve as proprias
    fraquezas la dentro, e o chat da live e publico.
    --------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------
+   AS CONVERSAS DELA. Pergunta e resposta, as duas inteiras. Quem responde e
+   um modelo diferente do dela, de proposito: duas instancias do mesmo modelo
+   concordam entre si, e concordar nao ajuda ninguem.
+   --------------------------------------------------------------------- */
+fetch("/api/consultas", { cache: "no-store" })
+  .then((r) => r.json())
+  .then((d) => {
+    const lista = d.conversas || [];
+    if (!lista.length) return;               // ainda nao perguntou nada
+    const cx = document.getElementById("conversas");
+    for (const c of lista) {
+      const it = document.createElement("div");
+      it.className = "item";
+
+      const w = document.createElement("div");
+      w.className = "quando";
+      w.textContent = quandoTxt(c.t);
+      it.appendChild(w);
+
+      const q = document.createElement("p");
+      q.className = "fala";
+      q.textContent = c.pergunta || "";       // texto dela: nunca innerHTML
+      it.appendChild(q);
+
+      if (c.porque) {
+        const p = document.createElement("p");
+        p.className = "resposta";
+        p.textContent = "why she asked: " + c.porque;
+        it.appendChild(p);
+      }
+      if (c.resposta) {
+        const a = document.createElement("p");
+        a.className = "resposta";
+        a.textContent = c.resposta;           // a resposta inteira, sem cortar
+        it.appendChild(a);
+      }
+      cx.appendChild(it);
+    }
+    document.getElementById("sel-conversas").textContent =
+      lista.length + (lista.length === 1 ? " question" : " questions");
+    document.getElementById("cx-conversas").style.display = "";
+  })
+  .catch(() => {});
+
 fetch("/api/versoes", { cache: "no-store" })
   .then((r) => r.json())
   .then((d) => {
