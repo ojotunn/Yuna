@@ -786,7 +786,19 @@ function acharCaminho(livre,ox,oy,dx,dy){
     ctxGato.globalCompositeOperation="source-over";
     ctxGato.drawImage(sp,0,0);
     ctxGato.globalCompositeOperation="destination-out";
-    for(const m of oclusores) ctxGato.drawImage(m.img,m.x-gx,m.y-gy);
+    /* SO O PEDACO A FRENTE DELE APAGA. Ver o comentario da funcao: em
+       isometrico, mais abaixo na tela = mais a frente. A linha de corte e o pe
+       do gato (a base do sprite); tudo acima disso esta ATRAS dele e nao pode
+       comer o desenho. Antes era tudo-ou-nada, e o gato ao lado dela saia
+       cortado pela metade. */
+    const peDoGato = gy + sp.height;         // y do pe, em coordenadas de tela
+    for(const m of oclusores){
+      const corte = Math.max(0, peDoGato - m.y);   // linha da mascara onde comeca "a frente"
+      const alt = m.img.height - corte;
+      if(alt <= 0) continue;                       // a silhueta inteira esta atras
+      ctxGato.drawImage(m.img, 0, corte, m.img.width, alt,
+                        m.x - gx, m.y + corte - gy, m.img.width, alt);
+    }
     ctxGato.globalCompositeOperation="source-over";
     ctx.drawImage(cvGato,gx,gy);
   }
