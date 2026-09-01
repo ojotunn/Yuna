@@ -1278,7 +1278,13 @@ function acharCaminho(livre,ox,oy,dx,dy){
       const q = new URLSearchParams(location.search).get("atelier");
       if(q) return q;
     } catch(e){}
-    return "http://localhost:8435/yuna";
+    /* O PROPRIO SITE, nao localhost.
+       Apontando pra `localhost:8435` o desenho so existia pra quem estivesse na
+       maquina de casa — quem abrisse yuna.cam via o painel vazio. Agora o
+       servidor dela serve o player e os toques, entao o desenho existe em
+       qualquer lugar onde o site esteja de pe. Caminho relativo: vale em
+       localhost e no dominio, sem configuracao. */
+    return "/desenho";
   })();
 
   /* A VELOCIDADE DO TRACO, repassada pra tela do desenho.

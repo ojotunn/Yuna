@@ -137,6 +137,48 @@ const servidor = http.createServer(async (req, res) => {
     return res.end(fs.readFileSync(arq));
   }
 
+  /* A TELA DO DESENHO — o player, servido pelo proprio site.
+     `?obra=` escolhe qual gravacao reproduzir; sem isso, a primeira da fila. */
+  if (url.pathname === "/desenho" || url.pathname === "/desenho.html") {
+    const arq = path.join(ROOT, "public", "tela-desenho.html");
+    if (!fs.existsSync(arq)) return enviar(res, 404, { erro: "o player nao foi empacotado" });
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+    return res.end(fs.readFileSync(arq));
+  }
+
+  /* OS TOQUES, por SSE. E o mesmo formato que o player do ateliê ja consome —
+     a tela nao precisou mudar. Reproduzir nao exige GPU: exige ler e enviar. */
+  if (url.pathname === "/eventos") {
+    const td = await import("./lib/transmissao-desenho.js");
+    const pedida = url.searchParams.get("obra");
+    const lista = td.indice(ROOT);
+    const nome = pedida || (lista[0] && lista[0].nome);
+    const g = nome ? td.carregar(ROOT, nome) : null;
+    if (!g) return enviar(res, 404, { erro: "sem gravacao pra reproduzir" });
+    return td.transmitir(res, g);
+  }
+
+  /* `/papo` era o chat da tela do Gogh. Aqui ela conversa no quarto, nao no
+     player — mas o EventSource do player pede mesmo assim, e um 404 faz ele
+     reconectar pra sempre, martelando o servidor. Um stream aberto e vazio
+     custa nada e cala a reconexao. */
+  if (url.pathname === "/papo") {
+    res.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-store", "x-accel-buffering": "no",
+    });
+    res.write(": sem papo aqui\n\n");
+    const bat = setInterval(() => { try { res.write(": ping\n\n"); } catch { clearInterval(bat); } }, 30000);
+    req.on("close", () => clearInterval(bat));
+    return;
+  }
+
+  /* O que existe pra reproduzir. */
+  if (url.pathname === "/api/gravacoes") {
+    const td = await import("./lib/transmissao-desenho.js");
+    return enviar(res, 200, { gravacoes: td.indice(ROOT) });
+  }
+
   /* O METADATA DO NFT. E o `uri` gravado dentro do asset, entao esta rota nao
      pode sumir nem mudar de formato: NFT ja mintado nao troca de endereco.
      Le a mesma ficha do acervo que a store usa — uma fonte so. */
