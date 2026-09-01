@@ -507,7 +507,17 @@ function acharCaminho(livre,ox,oy,dx,dy){
       let sy0 = h, sy1 = -1;
       for(let y=0;y<h;y++) for(let x=0;x<w;x++)
         if(uniao[y*w+x]){ if(y<sy0) sy0=y; if(y>sy1) sy1=y; break; }
-      e.silhueta={img:cvM,x:ox,y:oy,altura:Math.max(1, sy1-sy0)};
+      /* A BASE POR COLUNA: pra cada x, o y mais BAIXO que a silhueta ocupa —
+         a linha do chao dela naquela coluna. E o que permite responder "o gato
+         esta atras?" no ponto onde o gato realmente esta, em vez de comparar
+         tudo com o pe dela, que fica em outra coluna. -1 = ela nao ocupa nada
+         ali, entao nao ha o que ocultar. */
+      const baseCol = new Int16Array(w).fill(-1);
+      for(let x=0;x<w;x++)
+        for(let y=h-1;y>=0;y--)
+          if(uniao[y*w+x]){ baseCol[x]=oy+y; break; }
+      e.silhueta={img:cvM,x:ox,y:oy,altura:Math.max(1, sy1-sy0),
+                  baseCol, x0:ox, larg:w};
       /* PERFIL DE TOPO: pra cada coluna, a primeira linha em que a estacao
          desenhou alguma coisa. E o que diz onde esta a CABECA dela — usar a
          altura media (0,80 x ALT) punha o balao dentro dela em toda estacao:
@@ -786,18 +796,24 @@ function acharCaminho(livre,ox,oy,dx,dy){
     ctxGato.globalCompositeOperation="source-over";
     ctxGato.drawImage(sp,0,0);
     ctxGato.globalCompositeOperation="destination-out";
-    /* SO O PEDACO A FRENTE DELE APAGA. Ver o comentario da funcao: em
-       isometrico, mais abaixo na tela = mais a frente. A linha de corte e o pe
-       do gato (a base do sprite); tudo acima disso esta ATRAS dele e nao pode
-       comer o desenho. Antes era tudo-ou-nada, e o gato ao lado dela saia
-       cortado pela metade. */
-    const peDoGato = gy + sp.height;         // y do pe, em coordenadas de tela
+    /* COLUNA POR COLUNA, nao tudo-ou-nada.
+       Tentei os dois extremos e os dois estao errados quando eles estao lado a
+       lado: recortar tudo faz o gato sumir; nao recortar faz ele passar por
+       cima dela. Em isometrico a resposta e local — na coluna onde ELA pisa
+       mais a frente, ela cobre; na coluna ao lado, o gato passa limpo.
+       `baseCol` diz, pra cada x, a linha do chao dela ali. Oclusor sem baseCol
+       (as pecas do cenario) continua recortando inteiro, como sempre. */
+    const peG = Math.round(jiji.y);
     for(const m of oclusores){
-      const corte = Math.max(0, peDoGato - m.y);   // linha da mascara onde comeca "a frente"
-      const alt = m.img.height - corte;
-      if(alt <= 0) continue;                       // a silhueta inteira esta atras
-      ctxGato.drawImage(m.img, 0, corte, m.img.width, alt,
-                        m.x - gx, m.y + corte - gy, m.img.width, alt);
+      if(!m.baseCol){ ctxGato.drawImage(m.img,m.x-gx,m.y-gy); continue; }
+      for(let x=0; x<sp.width; x++){
+        const col = (gx + x) - m.x0;
+        if(col < 0 || col >= m.larg) continue;
+        const base = m.baseCol[col];
+        if(base < 0 || base <= peG) continue;      // ela nao pisa ali, ou pisa atras
+        ctxGato.drawImage(m.img, col, 0, 1, m.img.height,
+                          x, m.y - gy, 1, m.img.height);
+      }
     }
     ctxGato.globalCompositeOperation="source-over";
     ctx.drawImage(cvGato,gx,gy);
@@ -1675,11 +1691,10 @@ function acharCaminho(livre,ox,oy,dx,dy){
            apagado pela silhueta DELA estando na frente: sumia. Movel alto
            mantem a folga generosa; rasteiro ganha pouca, porque ali 24px e a
            diferenca entre estar atras e estar na frente. */
-        if(e.silhueta){
-          const alt = e.silhueta.altura || e.silhueta.img.height;
-          const folga = Math.max(4, Math.min(24, Math.round(alt * 0.06)));
-          if(jiji.y <= e.base + folga) naFrente.push(e.silhueta);
-        }
+        /* A silhueta dela entra SEMPRE como oclusor — quem decide onde ela
+           cobre e o recorte por coluna, dentro de `desenharGato`. Ver o
+           comentario de la: binario nao serve pra quem esta lado a lado. */
+        if(e.silhueta) naFrente.push(e.silhueta);
         desenharGato(spG,naFrente);
       }
 
