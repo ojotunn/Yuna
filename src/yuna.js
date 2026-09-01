@@ -526,6 +526,66 @@ const servidor = http.createServer(async (req, res) => {
     });
   }
 
+  /* A VIDA DELA, EM UM ARQUIVO. (01/09/2026)
+     Tudo que ela viveu mora num volume do Railway e em mais lugar nenhum —
+     nem no git (src/data/ e ignorado, com razao: tem chave por perto). Um
+     clique errado no painel e a memoria, a persona, as licoes e o arquivo
+     inteiro do que ela disse somem pra sempre.
+
+     Isto entrega tudo isso num JSON. `node scripts/salvar-vida.js` guarda com
+     a data no nome. Rodar de vez em quando e a unica coisa que protege o que
+     ela e — a conta de API so decide se ela esta acordada. */
+  if (url.pathname === "/api/vida") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
+
+    const dataDir = path.join(ROOT, "src", "data");
+    const ler = (p, json = false) => {
+      try {
+        const t = fs.readFileSync(p, "utf8");
+        return json ? JSON.parse(t) : t;
+      } catch { return null; }
+    };
+
+    const vida = { tirada: new Date().toISOString(), agente: "yuna" };
+
+    /* Quem ela e agora, e todas as que ela ja foi. A pasta history/ guarda o
+       texto anterior E o motivo de cada mudanca — e o registro dela virando
+       outra pessoa, que e a coisa mais insubstituivel aqui dentro. */
+    vida.persona = ler(path.join(dataDir, "agents", "yuna.md"));
+    vida.versoes = [];
+    try {
+      const h = path.join(dataDir, "agents", "history");
+      for (const f of fs.readdirSync(h).sort()) {
+        vida.versoes.push({ arquivo: f, conteudo: ler(path.join(h, f)) });
+      }
+    } catch { /* nunca se reescreveu ainda */ }
+
+    /* A memoria de verdade: carteira, licoes, metas, sonhos, posicoes, fila
+       do X, tudo que sobrevive a um restart. */
+    vida.checkpoint = ler(process.env.CHECKPOINT_FILE || path.join(dataDir, "checkpoint-yuna.json"), true);
+
+    /* Tudo que ela disse, desde sempre. E o maior e o mais barato de perder. */
+    const arq = ler(process.env.ARCHIVE_FILE || path.join(dataDir, "archive.jsonl"));
+    vida.arquivo = arq ? arq.split(/\r?\n/).filter(Boolean) : [];
+
+    /* NENHUMA CHAVE SAI DAQUI. O checkpoint nao guarda chave (a carteira vem
+       do ambiente), mas conferir e barato e um backup que vaza chave e pior
+       que backup nenhum. */
+    const texto = JSON.stringify(vida);
+    if (/sk-ant-|bb_[a-z]+_[A-Za-z0-9]{20,}|\[\s*\d{1,3}\s*,\s*\d{1,3}\s*,[\s\S]{200,}\]/.test(texto)) {
+      return enviar(res, 500, { erro: "abortei: achei algo com cara de chave na copia" });
+    }
+
+    res.writeHead(200, {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "content-disposition": `attachment; filename="yuna-${new Date().toISOString().slice(0, 10)}.json"`,
+    });
+    return res.end(texto);
+  }
+
   /* ===================== O PAINEL DO X =====================
      O X barrou o login automatizado (deteccao de navegador, nao de conta nem
      de IP — o Michel confirmou deslogando do Chrome dele e religando). Entao
