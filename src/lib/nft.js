@@ -107,11 +107,24 @@ export function metadataDe(obra, base = baseDoSite()) {
     external_url: base,
     attributes: [
       { trait_type: "artist", value: "Yuna" },
+      ...(obra.precoSol ? [{ trait_type: "price (SOL)", value: String(obra.precoSol) }] : []),
       { trait_type: "date", value: String(obra.dia || "") },
       { trait_type: "made", value: "live on stream" },
     ],
     properties: { files: [{ uri: img, type: "image/png" }], category: "image" },
   };
+}
+
+/* A FAIXA DE PRECO. Travas, nao sugestoes. */
+const PRECO_MIN = Number(process.env.OBRA_PRECO_MIN_SOL) || 1.5;
+const PRECO_MAX = Number(process.env.OBRA_PRECO_MAX_SOL) || 10;
+
+/* O preco que ELA pediu, preso na faixa. Sem numero dela, o piso — nunca
+   inventar um valor no meio e fingir que foi julgamento dela. */
+export function precoDaObra(pedido) {
+  const n = Number(pedido);
+  if (!Number.isFinite(n) || n <= 0) return PRECO_MIN;
+  return Math.min(PRECO_MAX, Math.max(PRECO_MIN, Math.round(n * 100) / 100));
 }
 
 /* Minta a obra pra carteira DELA. Devolve { ok, asset } ou { ok:false, motivo }. */

@@ -367,7 +367,8 @@ fetch("/api/obras", { cache: "no-store" })
         '<div class="quando"></div>' +
         '<div class="acao"><button disabled>COLLECT — SOON</button></div>';
       el.querySelector(".nome").textContent = titulo(o.tema);
-      el.querySelector(".quando").textContent = quando(o.dia);
+      el.querySelector(".quando").textContent =
+        quando(o.dia) + (o.precoSol ? "  ·  " + o.precoSol + " SOL" : "");
       el.querySelector("img").addEventListener("click", () => abrir(o));
       grade.appendChild(el);
     }
@@ -380,7 +381,9 @@ function abrir(o) {
   document.getElementById("v-titulo").textContent = titulo(o.tema);
   document.getElementById("v-quando").textContent = quando(o.dia);
   document.getElementById("v-notas").textContent = o.porque || "";
-  document.getElementById("v-preco").textContent = "";
+  /* O preco que ELA pediu pela obra. Sem preco, campo vazio — melhor que
+     inventar um numero e apresentar como julgamento dela. */
+  document.getElementById("v-preco").textContent = o.precoSol ? o.precoSol + " SOL" : "";
   veu.classList.add("aberto");
 }
 function fechar() { veu.classList.remove("aberto"); }

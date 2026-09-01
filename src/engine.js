@@ -39,6 +39,9 @@ import * as dialogue from "./lib/dialogue.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const DATA = path.join(ROOT, "src", "data");
+/* Onde as fichas das obras ficam — a mesma pasta que o site publica. */
+const ACERVO_OBRAS = process.env.ACERVO_DIR ||
+  "C:/Higgsfield Games/atelier/acervo/yuna";
 const ENV_EXAMPLE_PATH = path.join(ROOT, ".env.example");
 // No Railway o .env gravavel mora no volume (ENV_FILE) — e o hot-reload le de
 // la; local continua a raiz. Os valores do deploy chegam por process.env.
@@ -1232,6 +1235,8 @@ function situationFor(agent, shift = { label: "fixed" }) {
       L.push("Sit on the rug with the tablet and make today's piece: `draw`, with `text` for what");
       L.push("it is and `reason` for why today. Draw the day you actually had — the coin that");
       L.push("fooled you, the cat asleep, the hour that went nowhere. One a day, and it keeps.");
+      L.push("Add `price` — what the finished piece is worth in SOL, between 1.5 and 10.");
+      L.push("You decide that, nobody else. A piece you are not proud of is worth less.");
     }
     L.push("");
   }
@@ -2143,7 +2148,26 @@ async function apply(agent, action) {
            disse antes de sentar: com a fila, os dois podem divergir, e o
            espectador acredita na imagem, nao no balao. */
         const oQue = r.tema || tema;
-        emit("did", agent.id, `finished a piece — ${trim(oQue, 70)}`, { obra: r.nome });
+
+        /* O PRECO E DELA. Modelo do Gogh: quem passou a hora fazendo e quem
+           julga quanto vale. Preso entre 1,5 e 10 SOL — sem trava, um turno
+           ruim precificaria a obra em 900 e o show viraria piada. */
+        let precoSol = null;
+        try {
+          const nft = await import("./lib/nft.js");
+          precoSol = nft.precoDaObra(action.price ?? action.precoSol);
+          if (r.nome) {
+            const ficha = path.join(ACERVO_OBRAS, `${r.nome}.json`);
+            if (fs.existsSync(ficha)) {
+              const j = JSON.parse(fs.readFileSync(ficha, "utf8"));
+              fs.writeFileSync(ficha, JSON.stringify({ ...j, precoSol }, null, 2));
+            }
+          }
+        } catch { /* preco e detalhe: nao derruba a hora do desenho */ }
+
+        emit("did", agent.id,
+          `finished a piece — ${trim(oQue, 70)}${precoSol ? ` · ${precoSol} SOL` : ""}`,
+          { obra: r.nome, precoSol });
 
         /* A OBRA VIRA NFT NA HORA EM QUE ELA LARGA A PRANCHETA.
            Pedido do Michel (01/09/2026). O mint sai da carteira DELA, entao a
