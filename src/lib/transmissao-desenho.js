@@ -69,7 +69,11 @@ export function carregar(raiz, nome) {
 /* Manda a gravacao por SSE, no formato que o player do ateliê ja entende.
    Nao bloqueia o servidor: o envio e assincrono e para sozinho se quem estava
    assistindo fechar a aba. */
-export function transmitir(res, gravacao) {
+/* Quanto dura a hora do desenho, em minutos. E o relogio que sincroniza todo
+   mundo: a obra inteira e distribuida nesse tempo. */
+const DURACAO_MIN = Number(process.env.DESENHO_MINUTOS) || 50;
+
+export function transmitir(res, gravacao, { desde = null } = {}) {
   res.writeHead(200, {
     "content-type": "text/event-stream; charset=utf-8",
     "cache-control": "no-store, no-transform",
@@ -90,15 +94,31 @@ export function transmitir(res, gravacao) {
     } catch { vivo = false; return false; }
   };
 
+  const toques = gravacao.toques || [];
+
+  /* ONDE A OBRA DEVERIA ESTAR AGORA.
+     `desde` e o instante em que ela sentou (vem de `cena.desde`). O calculo e
+     aqui, mas quem SALTA e o player: o ritmo do traco e dele, e mandar os
+     toques mais cedo nao mudaria o compasso. Entao o numero viaja no `inicio`
+     e a tela desenha esse pedaco de uma vez.
+     Sem `desde`, comeca do zero — que e o certo pra um teste isolado. */
+  let pular = 0;
+  if (desde) {
+    const fracao = Math.max(0, Math.min(1,
+      (Date.now() - Number(desde)) / (DURACAO_MIN * 60000)));
+    pular = Math.floor(toques.length * fracao);
+  }
+
   enviar("inicio", {
     largura: gravacao.largura, altura: gravacao.altura,
-    fundo: gravacao.fundo, total: (gravacao.toques || []).length,
+    fundo: gravacao.fundo, total: toques.length,
     fala: "", ciclo: false, titulo: "",
     carimbos: gravacao.carimbos || {},
+    pular,
   });
 
-  const toques = gravacao.toques || [];
   let i = 0;
+
   const passo = () => {
     if (!vivo) return;
     if (i >= toques.length) {

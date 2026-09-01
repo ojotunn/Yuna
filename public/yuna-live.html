@@ -1320,8 +1320,15 @@ function acharCaminho(livre,ox,oy,dx,dy){
       /* Endereco novo a cada vez: a tela do desenho vive de um stream de
          eventos, e reabrir com o mesmo src deixaria o iframe preso no stream
          morto da sessao anterior. */
+      /* `desde` = o instante em que ela sentou no tapete, que o motor publica
+         em `cena.desde`. E com ele que o servidor calcula em que ponto a obra
+         deveria estar: quem abre no meio da hora ve o meio, e dar refresh nao
+         volta pro comeco. Sem isso, cada espectador via um desenho diferente. */
       let u = ATELIER_URL + (ATELIER_URL.includes("?") ? "&" : "?") + "_r=" + Date.now();
       if(VEL_DESENHO !== null) u += "&vel=" + VEL_DESENHO;
+      const sentouEm = (motor.dados && motor.dados.agents && motor.dados.agents.yuna
+                        && motor.dados.agents.yuna.cena || {}).desde;
+      if(sentouEm) u += "&desde=" + sentouEm;
       pran.quadro.src = u;
     } else {
       pran.quadro.removeAttribute("src");

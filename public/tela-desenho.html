@@ -270,6 +270,7 @@ const btn = document.getElementById("pausa");
 let fila = [];
 let lido = 0;
 let feitos = 0, total = 0, tocando = true, pronto = false;
+let aPular = 0;          // toques a desenhar sem animacao (ver o laco)
 
 // A velocidade e em toques por SEGUNDO, nao por quadro. Por quadro, o
 // valor padrao antigo (90) dava 5.400/s e a obra inteira acabava em menos
@@ -544,6 +545,15 @@ function laco(agora) {
   const dt = ultimo ? Math.min(0.25, (agora - ultimo) / 1000) : 0;
   ultimo = agora;
 
+  /* SALTO: o pedaco que ja aconteceu vai de uma vez, sem animacao. Quem abre a
+     pagina no minuto 40 nao pode esperar 40 minutos pra ver o que ja passou. */
+  if (aPular > 0 && fila.length) {
+    const ate = Math.min(aPular, fila.length);
+    while (lido < ate) { toque(fila[lido++]); feitos++; }
+    if (lido >= aPular) { aPular = 0; aplicarTrocas(); }
+    elNum.textContent = feitos.toLocaleString("pt-BR");
+  }
+
   if (tocando && lido < fila.length) {
     acumulado += dt * porSegundo();
     let mexeu = false;
@@ -637,7 +647,11 @@ function linhaCamada(nome) {
   return div;
 }
 
-const es = new EventSource("/eventos");
+/* REPASSA `obra` e `desde` da propria URL. Sem isso o stream comecaria do zero
+   a cada conexao — e foi o que o Michel viu: "se dou refresh ela inicia de novo
+   o desenho". Numa live, o que esta na tela dela tem que ser o que esta na tela
+   de todos. */
+const es = new EventSource("/eventos" + (location.search || ""));
 
 es.addEventListener("espera", e => {
   const d = JSON.parse(e.data);
@@ -654,6 +668,9 @@ es.addEventListener("inicio", e => {
   ctx.fillStyle = d.fundo;
   ctx.fillRect(0, 0, cv.width, cv.height);
   total = d.total;
+  /* Onde a obra ja deveria estar, calculado pelo servidor a partir da hora em
+     que ela sentou no tapete. Zero = comeca do inicio (teste isolado). */
+  aPular = Number(d.pular) || 0;
   cicloAtivo = !!d.ciclo;
   carregarCarimbos(d.carimbos);
   desenharTrama(d.largura, d.altura);

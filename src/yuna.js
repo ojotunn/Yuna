@@ -155,7 +155,9 @@ const servidor = http.createServer(async (req, res) => {
     const nome = pedida || (lista[0] && lista[0].nome);
     const g = nome ? td.carregar(ROOT, nome) : null;
     if (!g) return enviar(res, 404, { erro: "sem gravacao pra reproduzir" });
-    return td.transmitir(res, g);
+    /* `desde` = quando ela sentou. E o que sincroniza todo mundo no mesmo
+       ponto da obra, e o que faz o refresh nao voltar pro comeco. */
+    return td.transmitir(res, g, { desde: url.searchParams.get("desde") });
   }
 
   /* `/papo` era o chat da tela do Gogh. Aqui ela conversa no quarto, nao no
