@@ -1496,6 +1496,17 @@ function situationFor(agent, shift = { label: "fixed" }) {
       L.push("END CHAT>>>");
       L.push("");
       scanForInjection(agent, msgs.map((m) => m.text).join(" "));
+      /* COMO SE RESPONDE, dito sem rodeio. (01/09/2026)
+         Ela leu a mensagem do Michel, reagiu no journal, e ninguem na sala
+         ouviu — porque journal e palco, nao sala. O menu ensinava
+         `speak to:"room"` sem nunca dizer que o journal NAO chega la, entao
+         do ponto de vista dela ela tinha respondido. */
+      L.push("HOW THEY HEAR YOU: your journal does NOT reach the room. It shows on the");
+      L.push("stage, and the people typing above never see a word of it. The ONLY thing");
+      L.push("that reaches them is the action `speak` with `to: \"room\"`. If you read");
+      L.push("something here and answer in your journal, you have answered nobody —");
+      L.push("they watched you read it and say nothing.");
+      L.push("");
       L.push("Tonight is a conversation, not a session. The person keeping the lights on is");
       L.push("in the room and wants to talk. Reading, thinking and answering are the work —");
       L.push("do not go hunting for a trade to fill the time.");
