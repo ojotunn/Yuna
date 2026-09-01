@@ -517,7 +517,7 @@ function acharCaminho(livre,ox,oy,dx,dy){
         for(let y=h-1;y>=0;y--)
           if(uniao[y*w+x]){ baseCol[x]=oy+y; break; }
       e.silhueta={img:cvM,x:ox,y:oy,altura:Math.max(1, sy1-sy0),
-                  baseCol, x0:ox, larg:w};
+                  baseCol, x0:ox, larg:w, pe:e.base};
       /* PERFIL DE TOPO: pra cada coluna, a primeira linha em que a estacao
          desenhou alguma coisa. E o que diz onde esta a CABECA dela — usar a
          altura media (0,80 x ALT) punha o balao dentro dela em toda estacao:
@@ -806,11 +806,18 @@ function acharCaminho(livre,ox,oy,dx,dy){
     const peG = Math.round(jiji.y);
     for(const m of oclusores){
       if(!m.baseCol){ ctxGato.drawImage(m.img,m.x-gx,m.y-gy); continue; }
+      /* O PE REAL DELA decide a profundidade, nao a base tirada da mascara.
+         Medido: nos pesinhos o pe e 662 e a mascara dava 623-652 — ate 39px
+         acima, porque os sapatos sao pretos sobre piso escuro e nao passam do
+         limiar de cor. Comparar com essa linha falsa apagava o gato em faixas
+         onde ele devia aparecer.
+         A mascara continua respondendo bem a outra pergunta: ELA OCUPA esta
+         coluna? E so isso que se pergunta a ela. */
+      if(m.pe <= peG) continue;                    // ela esta atras do gato: nao cobre
       for(let x=0; x<sp.width; x++){
         const col = (gx + x) - m.x0;
         if(col < 0 || col >= m.larg) continue;
-        const base = m.baseCol[col];
-        if(base < 0 || base <= peG) continue;      // ela nao pisa ali, ou pisa atras
+        if(m.baseCol[col] < 0) continue;           // ela nao ocupa esta coluna
         ctxGato.drawImage(m.img, col, 0, 1, m.img.height,
                           x, m.y - gy, 1, m.img.height);
       }
