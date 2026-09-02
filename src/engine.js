@@ -959,6 +959,10 @@ function publish() {
           personaVersion: a.personaVersion, reading: a.reading,
           /* Quantas vezes ela ja se reescreveu. O site vai querer mostrar. */
           revisouHoje: a.revisouHoje ?? null,
+          /* O QUE ELA ESTA ESCREVENDO OU ACABOU DE RODAR — vai pro monitor do
+             quarto: o trabalho dela acontecendo, nao so o resultado. */
+          bancadaTela: a.bancadaTela ?? null,
+          bancada: a.bancada ?? [],
           /* O QUE ELA PINTOU AO VIVO. O comentario la em `case "draw"` diz que
              esta lista "viaja no espelho e autoriza a obra a aparecer na
              store" — so que ela nunca foi publicada aqui, entao yuna.js:135
@@ -1511,6 +1515,20 @@ function situationFor(agent, shift = { label: "fixed" }) {
     }
   }
 
+  /* O QUE O CODIGO DELA IMPRIMIU. Entra uma vez. O erro vem inteiro: e lendo
+     o proprio erro que uma pessoa conserta o proprio programa. */
+  const rodou = (state.execucoes ?? []).filter((x) => !x.lida);
+  if (rodou.length) {
+    for (const x of rodou) {
+      L.push(`YOU RAN ${x.arquivo}:`);
+      L.push("  <<<BEGIN OUTPUT");
+      for (const linha of String(x.saida).split(String.fromCharCode(10)).slice(0, 40)) L.push(`  ${trim(linha, 180)}`);
+      L.push("  END OUTPUT>>>");
+      x.lida = true;
+    }
+    L.push("");
+  }
+
   /* O QUE FICOU PRONTO NA OFICINA. Entra uma vez, e vem com o que a coisa NAO
      faz junto — sem isso ela confiaria numa ferramenta que nao entende. */
   const construidas = (state.construcoes ?? []).filter((c) => c.estado === "pronto" && !c.vista);
@@ -1958,11 +1976,14 @@ function situationFor(agent, shift = { label: "fixed" }) {
   /* PEDIR. So faz sentido depois de "Where you end" no system: ela sabe que a
      lista e finita, e isto e o que se faz com esse conhecimento. */
   if (String(process.env.OFICINA_URL || "").trim()) {
-    L.push('  build            — `text`: a tool you want built, described in full.');
-    L.push('                     `reason`: what you would use it for. Two a day.');
-    L.push('                     Someone more capable than you writes it, runs it to check,');
-    L.push('                     and tells you what it does AND what it does not do. It lands');
-    L.push('                     a few turns later. Describe the thing, not the code.');
+    /* ELA PROGRAMA. Nao encomenda: escreve. Ver o `case` correspondente. */
+    L.push('  escrever         — `query`: a filename ending in .js. `text`: the code itself.');
+    L.push('                     You write it. It is saved on your bench and it stays there.');
+    L.push('  rodar            — `query`: a file on your bench. It runs and you see the output,');
+    L.push('                     errors included. Five seconds, no network, nothing but what');
+    L.push('                     you wrote. Broken output is how you find the mistake.');
+    if (agent.bancada?.length)
+      L.push(`                     on your bench now: ${agent.bancada.join(", ")}`);
   }
   L.push('  consult          — `query`: a hard question, asked of someone outside this room.');
   L.push('                     `reason`: why you need to know. Two a day. They answer in');
@@ -2473,7 +2494,7 @@ const MOVEL_DA_ACAO = {
   // Perguntar tambem e pensar sobre si — mesmo lugar.
   consult: "cafe",
   // Encomendar uma ferramenta e trabalho: o PC.
-  build: "mesa",
+  escrever: "mesa", rodar: "mesa",
   // Parar de verdade.
   rest: "sofa",
   // Falar nao muda de comodo — ela fala de onde estiver.
@@ -3550,80 +3571,56 @@ async function apply(agent, action) {
       return;
     }
 
-    case "build": {
-      const ondeOficina = String(process.env.OFICINA_URL || "").trim();
-      if (!ondeOficina)
-        return emit("note", agent.id, "there is no workshop to send this to yet");
-      /* DUAS POR DIA, e o motivo nao e custo: uma ferramenta so vale quando
-         voce usou a anterior. Cinco por dia e o erro dos cinco posts iguais. */
-      if (agent.buildsHoje?.dia === state.day && agent.buildsHoje.n >= 2) {
-        agent.stats.denials++;
-        return emit("denied", agent.id,
-          "two builds a day. Use the last one before you order another.");
-      }
-      const oQue = trim(String(action.text ?? "").trim(), 1200);
-      if (oQue.length < 30)
-        return emit("note", agent.id, "describe the tool in full — a half sentence cannot be built");
-      const joia = peneirar(oQue);
-      if (joia.barrado) {
-        agent.stats.denials++;
-        return emit("denied", agent.id, "that described the plumbing — ask for the tool, not the wiring");
-      }
-      agent.buildsHoje = agent.buildsHoje?.dia === state.day
-        ? { dia: state.day, n: agent.buildsHoje.n + 1 }
-        : { dia: state.day, n: 1 };
+    case "escrever":
+    case "rodar": {
+      const banca = String(process.env.OFICINA_URL || "").trim();
+      if (!banca) return emit("note", agent.id, "there is no bench to write on yet");
+      const arquivo = String(action.query ?? "").trim().slice(0, 80);
+      if (!/^[\w.-]+\.js$/.test(arquivo))
+        return emit("note", agent.id, "name the file, ending in .js — like exit-check.js");
 
-      const id = `b${Date.now().toString(36)}${state.construcoes.length.toString(36)}`;
-      state.construcoes.push({
-        id, agent: agent.id, oQue,
-        paraQue: trim(String(action.reason ?? "").trim(), 400),
-        t: Date.now(), estado: "construindo",
-      });
-      emit("did", agent.id, `sent something to be built — ${trim(oQue, 130)}`);
+      const chamar = (rota, corpo) => fetch(`${banca.replace(/\/+$/, "")}${rota}`, {
+        method: "POST",
+        headers: { "content-type": "application/json",
+                   "x-oficina-token": process.env.OFICINA_TOKEN || "" },
+        body: JSON.stringify(corpo),
+      }).then((r) => r.json());
 
-      /* DISPARA E NAO ESPERA: construir levou 114s no teste, o turno dela e
-         de 30s. O resultado entra quando chegar. */
-      (async () => {
-        const c = state.construcoes.find((x) => x.id === id);
+      if (t === "escrever") {
+        /* O CODIGO E DELA. Sai do turno dela, como o journal — nao ha modelo
+           intermediario escrevendo em nome dela. */
+        const codigo = String(action.text ?? "");
+        if (codigo.trim().length < 10)
+          return emit("note", agent.id, "write the code in `text` — the file is what you put there");
         try {
-          const r = await fetch(`${ondeOficina.replace(/\/+$/, "")}/construir`, {
-            method: "POST",
-            headers: { "content-type": "application/json",
-                       "x-oficina-token": process.env.OFICINA_TOKEN || "" },
-            body: JSON.stringify({ pedido: oQue, contexto: action.reason ?? "" }),
-          }).then((x) => x.json());
-          if (!r?.id) throw new Error(r?.erro || "a oficina recusou");
-
-          /* Pergunta de tempos em tempos ate ficar pronto. Teto de 8 minutos:
-             se passou disso, alguma coisa esta errada la e nao aqui. */
-          const fim = Date.now() + 8 * 60000;
-          for (;;) {
-            await new Promise((espera) => setTimeout(espera, 8000));
-            const t = await fetch(`${ondeOficina.replace(/\/+$/, "")}/trabalho/${r.id}`, {
-              headers: { "x-oficina-token": process.env.OFICINA_TOKEN || "" },
-            }).then((x) => x.json()).catch(() => null);
-            if (t && t.estado !== "construindo") {
-              c.estado = t.estado;
-              c.resumo = t.resumo ?? null;
-              c.arquivos = t.arquivos ?? [];
-              c.prontoEm = Date.now();
-              emit("did", agent.id, t.estado === "pronto"
-                ? `it came back built — ${trim(String(t.resumo), 380)}`
-                : `the workshop could not finish that one (${t.estado})`);
-              return;
-            }
-            if (Date.now() > fim) {
-              c.estado = "sem resposta";
-              emit("note", agent.id, "the workshop went quiet on that one");
-              return;
-            }
-          }
+          const r = await chamar("/escrever", { arquivo, conteudo: codigo });
+          const linhas = codigo.split(String.fromCharCode(10)).length;
+          emit("did", agent.id, `wrote ${arquivo} — ${linhas} lines`);
+          agent.bancada = (r.arquivos ?? []).map((x) => x.arquivo);
+          /* O que ela escreveu vai pra tela: e o trabalho acontecendo. */
+          agent.bancadaTela = { arquivo, codigo: trim(codigo, 1200), quando: Date.now() };
         } catch (e) {
-          if (c) { c.estado = "falhou"; c.erro = String(e.message).slice(0, 200); }
-          emit("note", agent.id, `the workshop could not take that one: ${String(e.message).slice(0, 120)}`);
+          emit("note", agent.id, `the bench did not take it: ${String(e.message).slice(0, 100)}`);
         }
-      })();
-      if (state.construcoes.length > 60) state.construcoes = state.construcoes.slice(-40);
+        return;
+      }
+
+      /* RODAR. A saida volta pra ela no turno seguinte — inclusive o erro,
+         que e como uma pessoa conserta o proprio codigo. */
+      try {
+        const r = await chamar("/rodar", { arquivo });
+        const saida = String(r.saida ?? "").trim();
+        state.execucoes = state.execucoes ?? [];
+        state.execucoes.push({ arquivo, saida: trim(saida, 3000), t: Date.now(), lida: false });
+        if (state.execucoes.length > 30) state.execucoes = state.execucoes.slice(-20);
+        const quebrou = /stderr:|Error|error:/.test(saida);
+        emit("did", agent.id, quebrou
+          ? `ran ${arquivo} — it broke: ${trim(saida.replace(/\s+/g, " "), 160)}`
+          : `ran ${arquivo} — ${trim(saida.replace(/\s+/g, " "), 220)}`);
+        agent.bancadaTela = { arquivo, saida: trim(saida, 900), quando: Date.now() };
+      } catch (e) {
+        emit("note", agent.id, `could not run it: ${String(e.message).slice(0, 100)}`);
+      }
       return;
     }
 

@@ -154,7 +154,11 @@ const ACTION_SCHEMA = {
             // A OFICINA. Ela descreve uma ferramenta e alguem mais capaz que
             // ela constroi, roda e devolve. Reusa `text` (o que construir) e
             // `reason` (pra que serve). Enum e de graca.
-            "build",
+            // ELA PROGRAMA. `escrever` reusa `query` (o nome do arquivo) e
+            // `text` (o codigo, escrito por ela). `rodar` reusa `query`.
+            // Sem campo novo: os unions continuam 16/16.
+            "escrever",
+            "rodar",
             "consult",
             "ask",
             "post",
