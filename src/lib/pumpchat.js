@@ -228,6 +228,40 @@ function naListaDaSala(room, id) {
   return (room.messages ?? []).some((m) => m && m.id === id);
 }
 
+/* OLHA COM OUTROS OLHOS. Abre uma conexao anonima, le o historico que um
+   terceiro carregaria, e procura a mensagem. E a mesma coisa que eu fiz na mao
+   pra descobrir que ela nao aparecia — so que agora o motor faz sozinho.
+   Conexao curta e barata: ela posta poucas vezes por hora. */
+function conferirComoTerceiro(mint, id, esperaMs = 3500) {
+  return new Promise((resolve) => {
+    let ws = null, pronto = false;
+    const fim = (r) => { if (pronto) return; pronto = true; try { ws?.close(); } catch {} resolve(r); };
+    const timer = setTimeout(() => fim(false), esperaMs + 6000);
+    try {
+      ws = new WebSocket(URL, { headers: { origin: "https://pump.fun", "user-agent": UA } });
+    } catch { clearTimeout(timer); return resolve(false); }
+    let ackId = 0;
+    ws.on("message", (data) => {
+      const t = data.toString();
+      if (t.startsWith("0{")) {
+        ws.send(`40${JSON.stringify({ origin: "https://pump.fun", timestamp: Date.now(),
+                                      token: null, deviceId: `device-${crypto.randomUUID()}` })}`);
+        return;
+      }
+      if (t === "2") { ws.send("3"); return; }
+      if (t.startsWith("40")) {
+        ws.send(`42${ackId++}${JSON.stringify(["joinRoom", { roomId: mint, username: "" }])}`);
+        return;
+      }
+      /* O historico vem no ack do joinRoom e/ou em getMessageHistory; procurar
+         o id no texto cru cobre os dois formatos sem depender do envelope. */
+      if (t.includes(id)) { clearTimeout(timer); fim(true); }
+    });
+    ws.on("error", () => { clearTimeout(timer); fim(false); });
+    ws.on("close", () => { clearTimeout(timer); fim(false); });
+  });
+}
+
 function confirmarEntrega(mint, id, janelaMs = 4000) {
   const room = rooms.get(mint);
   /* SEM SALA, A RESPOSTA E "NAO SEI" — e "nao sei" nao e "sim".
@@ -241,7 +275,9 @@ function confirmarEntrega(mint, id, janelaMs = 4000) {
     const fim = Date.now() + janelaMs;
     const olhar = () => {
       if (naListaDaSala(room, id)) return resolve(true);
-      if (Date.now() >= fim) return resolve(false);
+      /* Antes de dizer que nao foi, olha com outros olhos: o socket de longa
+         vida pode estar conectado e surdo, e nesse estado ele reprovaria tudo. */
+      if (Date.now() >= fim) return conferirComoTerceiro(mint, id).then(resolve);
       setTimeout(olhar, 250);
     };
     setTimeout(olhar, 250);
