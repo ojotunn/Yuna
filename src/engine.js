@@ -3816,9 +3816,8 @@ async function apply(agent, action) {
          sao improvaveis, mas o indice do array nao serve: a fila e podada. */
       /* PARAGRAFO DUPLO E VOZ DE DIARIO. O X nao e o palco: se precisa de dois
          paragrafos, sao dois posts, ou nunca foi um pensamento so. */
-      if (/
-\s*
-/.test(text)) {
+      const LINHA = String.fromCharCode(10);   // sem barra invertida aqui, de proposito
+      if (text.includes(LINHA + LINHA)) {
         agent.stats.denials++;
         return emit("denied", agent.id,
           "that is two posts, not one — the blank line is the tell. Pick the half that " +
