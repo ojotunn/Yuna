@@ -1933,6 +1933,9 @@ export function processBankDecisions() {
     const rq = state.loanRequests.find((r) => r.id === d.requestId && r.status === "with_bank");
     if (!rq) continue; // ja processada, ou id errado
     const agent = state.agents[rq.agent];
+    /* Peticao de um elenco antigo (sable/rook) sobrevivendo num checkpoint
+       daria `undefined.bankDebt`. Barato de guardar, caro de descobrir. */
+    if (!agent) continue;
     if (d.approve) {
       // O banqueiro pode aprovar um valor DIFERENTE do pedido (contra-oferta).
       const amt = Number(d.amount) > 0 ? Number(d.amount) : rq.amount;
@@ -2001,7 +2004,13 @@ export function processXAcoes() {
   for (const a of itens) {
     if (!a?.id || state.xVistas.includes(a.id)) continue;
 
-    if (a.tipo === "postei" || a.tipo === "descartar") {
+    /* "restaurar" TEM que estar aqui. O ramo do desfazer mora dentro deste
+       bloco, entao sem este terceiro tipo a condicao era logicamente
+       impossivel: o painel mandava, o server aceitava e gravava, e o motor
+       nunca lia. O botao "PUT IT BACK" nao fazia nada, em silencio — e ele
+       existe justamente porque o Michel clicou em "POSTED IT" nos quatro posts
+       achando que publicava. */
+    if (a.tipo === "postei" || a.tipo === "descartar" || a.tipo === "restaurar") {
       const post = state.posts.find((x) => x.id === a.post);
       /* NAO CONSOME A ACAO SEM ACHAR O POST.
          Se o motor reiniciou com um checkpoint anterior ao post, ou se o post
@@ -3028,6 +3037,13 @@ async function apply(agent, action) {
         const sizeUsd = cfg.maxRealTradeUsd > 0
           ? Math.min(p.sizeUsd, cfg.maxRealTradeUsd)
           : p.sizeUsd;
+        /* SEM PRECO DO SOL NAO DA PRA DIMENSIONAR. Sem esta guarda,
+           `sizeUsd / 0` vira Infinity e `sizeUsd / undefined` vira NaN — e o
+           numero vai pra uma ordem REAL na blockchain. O mesmo caminho na call
+           ja tinha a guarda (o `if (!(solUsd > 0))` do case callout); aqui,
+           que e onde o dinheiro grande passa, nao tinha. */
+        if (!(solUsd > 0))
+          return emit("denied", agent.id, "no SOL price right now — cannot size the order");
         const amountSol = sizeUsd / solUsd;
 
         // 1) NA TELA primeiro — o espectador ve o agente conectando a carteira,
@@ -3178,9 +3194,21 @@ async function apply(agent, action) {
         }
       }
       state.closed.push(done);
-      // Se o outro tinha objetado e o trade deu ruim, a objecao estava certa.
+      /* A OBJECAO ESTAVA CERTA — MAS QUEM OBJETOU PODE NAO SER UM AGENTE.
+         Este e o irmao exato do crash que matou o show por 8h20 hoje. Com dois
+         agentes, `objection.by` era sempre um id do elenco. Sozinha, quem
+         objeta e A CASA: o advogado do diabo grava `by: "the house"`, que nao
+         e chave de `state.agents` — e `state.agents["the house"].stats`
+         estoura, matando o processo.
+         O caminho e comportamento NORMAL: ela propoe, a casa objeta, ela
+         executa mesmo assim (permitido acima da conviccao 7) e a operacao da
+         negativo. Ou seja: dispara justamente no caso que este contador existe
+         pra registrar. */
       if (done.objection && done.realized < 0) {
-        state.agents[done.objection.by].stats.objectionsRight++;
+        const quemObjetou = state.agents[done.objection.by];
+        if (quemObjetou) quemObjetou.stats.objectionsRight++;
+        else emit("note", agent.id,
+          "the house argued against that one and the house was right.");
       }
       // Cicatrizes: o que doeu (ou brilhou) de verdade continua no peito por
       // uns dias — e o humor do agente atravessando turnos.
@@ -3288,7 +3316,14 @@ async function apply(agent, action) {
           c.chegouEm = Date.now();
           /* COAGE. Se algum dia chegar coisa que nao e numero, o gasto
              acumulado nao vira texto de novo — ele so ignora. */
-          state.spentReal = dinheiro(state.spentReal) + dinheiro(r.custo);
+          /* SAI DO TESOURO TAMBEM. Os outros tres somadores de custo fazem as
+             tres coisas juntas (tesouro, gasto da sessao, totais vitalicios);
+             este so fazia uma, entao a consulta dela queimava dinheiro real que
+             o tesouro nunca via — a sobrevida ficava otimista. */
+          const custo = dinheiro(r.custo);
+          state.treasury -= custo;
+          state.spentReal = dinheiro(state.spentReal) + custo;
+          totals.spentReal = dinheiro(totals.spentReal) + custo;
           /* A RESPOSTA TAMBEM. O texto inteiro vai pro feed: e a metade da
              conversa que o publico veio ver. */
           emit("did", agent.id, `the answer came back — ${trim(r.texto, 420)}`);
@@ -4043,9 +4078,11 @@ function buildSystem(agent) {
     "The money matters in one narrow way: it has to be real. Real wallet, real signature,",
     "anyone can look it up. What you must never do is fake urgency about it — no panic you do",
     "not feel, no trade to prove you are working. Boredom on camera is honest. Performance is not.",
-    "that happens to be wired up first.",
     "",
-    "The others are real and open to you:",
+    /* Aqui havia meia frase orfa — "that happens to be wired up first." — sem
+       comeco. Ela lia isso todo turno desde antes de hoje. */
+    "And trading is only one of the things a day here can be made of. The others are",
+    "real and open to you:",
     "",
     "- **Learning.** Reading to actually understand something — a mechanism, a person, a",
     "  market structure — rather than to justify a position you already want. What you learn",
