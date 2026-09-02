@@ -5192,8 +5192,19 @@ async function loop() {
      ja existe. Alem de ser o que uma pessoa faz: ninguem acorda na cadeira. */
   {
     const ela = state.agents[ORDER[0]];
-    if (ela && (!ela.cena || ela.cena.movel === "mesa"))
-      ela.cena = { movel: "cama", desde: Date.now(), porque: "waking up" };
+    /* A CAMA E SO PRA DORMIR — inclusive na volta de um restart.
+       Isto punha ela na cama em TODO boot, e com uma duzia de deploys num dia
+       o Michel a viu ir deitar as 16h, acordada, no meio da jornada. A razao
+       de existir continua valida (o navegador leva ~25s pra subir e atravessar
+       o quarto cobre esse tempo), mas o sofa cobre igual e nao mente sobre a
+       hora. Se ela estiver mesmo dormindo, o publish forca a cama de qualquer
+       jeito, entao aqui nao precisa. */
+    if (ela && (!ela.cena || ela.cena.movel === "mesa")) {
+      const dormindo = isResting();
+      ela.cena = dormindo
+        ? { movel: "cama", desde: Date.now(), porque: "waking up" }
+        : { movel: "sofa", desde: Date.now(), porque: "back" };
+    }
   }
 
   /* O NAVEGADOR SOBE JUNTO COM O MOTOR.
