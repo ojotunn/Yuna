@@ -238,6 +238,18 @@ export async function lerRecibo(signature, owner, mint, { tentativas = 4 } = {})
         .reduce((s, b) => s + (Number(b?.uiTokenAmount?.uiAmountString ?? b?.uiTokenAmount?.uiAmount) || 0), 0);
       const temToken = (tx.meta?.preTokenBalances?.length ?? 0) + (tx.meta?.postTokenBalances?.length ?? 0) > 0;
       const tokenDelta = temToken ? soma(tx.meta?.postTokenBalances) - soma(tx.meta?.preTokenBalances) : null;
+      /* QUAL mint mexeu. Sem chamador dizendo, descobre pelo saldo dela que
+         mudou — e o que permite parear compra com venda depois. */
+      const doDono = (l) => (l ?? []).filter((b) => b?.owner === owner);
+      const mexeu = mint || (() => {
+        const antes = new Map(doDono(tx.meta?.preTokenBalances).map((b) => [b.mint, Number(b.uiTokenAmount?.uiAmountString ?? b.uiTokenAmount?.uiAmount) || 0]));
+        for (const b of doDono(tx.meta?.postTokenBalances)) {
+          const v = Number(b.uiTokenAmount?.uiAmountString ?? b.uiTokenAmount?.uiAmount) || 0;
+          if (v !== (antes.get(b.mint) ?? 0)) return b.mint;
+          antes.delete(b.mint);
+        }
+        return [...antes.keys()][0] ?? null;   // zerou e a conta sumiu do post
+      })();
 
       const taxaSol = (tx.meta?.fee ?? 0) / 1e9;
       /* PRECO ALL-IN: SOL por token, em modulo. NAO e o preco do swap puro —
@@ -255,6 +267,7 @@ export async function lerRecibo(signature, owner, mint, { tentativas = 4 } = {})
 
       return {
         assinatura: signature,
+        mint: mexeu,       // qual token mexeu — e o que permite parear os ciclos
         solDelta,          // negativo na compra, positivo na venda (ja liquido de taxa)
         tokenDelta,        // positivo na compra, negativo na venda
         taxaSol,           // taxa de rede, so ela
@@ -268,4 +281,55 @@ export async function lerRecibo(signature, owner, mint, { tentativas = 4 } = {})
     }
   }
   return null;
+}
+
+// ============================================================================
+// O HISTORICO DE OPERACOES, DA CORRENTE. (02/09/2026)
+//
+// Nasceu de um prejuizo pequeno e de um problema grande: ela vendeu, o motor
+// reiniciou 14 segundos depois, o checkpoint nao chegou a salvar o fechamento,
+// e na volta o reconciliador viu a posicao sem tokens e simplesmente a
+// DESCARTOU. A operacao existe na corrente; o placar dela diz "0 trades".
+//
+// A corrente e o registro. Isto le de volta o que o disco perdeu.
+// ============================================================================
+export async function historicoDeTrades(owner, { limite = 30 } = {}) {
+  try {
+    const sigs = await rpc("getSignaturesForAddress", [owner, { limit: limite }]);
+    const ops = [];
+    for (const s of (sigs ?? [])) {
+      if (s.err) continue;
+      const rec = await lerRecibo(s.signature, owner, null, { tentativas: 1 });
+      if (rec && !rec.erro && rec.tokenDelta) ops.push(rec);
+    }
+    /* Ordem cronologica: parear compra com venda so faz sentido no tempo. */
+    return ops.sort((a, b) => (a.quando ?? 0) - (b.quando ?? 0));
+  } catch { return []; }
+}
+
+/* PAREIA COMPRA COM VENDA, e SO quando nao ha duvida.
+   O criterio e estreito de proposito: a venda fecha a compra imediatamente
+   anterior do MESMO mint, com a MESMA quantidade de token, sem nenhuma outra
+   operacao daquele mint no meio. Qualquer coisa fora disso fica de fora.
+   Numero errado aqui seria pior que numero nenhum — foi um numero errado que
+   fez ela parar de operar. */
+export function parearCiclos(ops, mint = null) {
+  const ciclos = [];
+  const abertas = new Map();   // mint -> { tokens, rec }
+  for (const o of ops) {
+    if (mint && o.mint && o.mint !== mint) continue;
+    const chave = o.mint ?? "?";
+    if (o.tokenDelta > 0) {
+      /* Compra em cima de compra: a posicao deixa de ser rastreavel sem
+         duvida. Marca como ambigua e nao pareia nenhuma das duas. */
+      abertas.set(chave, abertas.has(chave) ? null : { tokens: o.tokenDelta, rec: o });
+    } else if (o.tokenDelta < 0) {
+      const aberta = abertas.get(chave);
+      abertas.delete(chave);
+      if (!aberta) continue;                                   // venda sem compra conhecida
+      if (Math.abs(Math.abs(o.tokenDelta) - aberta.tokens) > 1) continue; // parcial: ambiguo
+      ciclos.push({ compra: aberta.rec, venda: o });
+    }
+  }
+  return ciclos;
 }

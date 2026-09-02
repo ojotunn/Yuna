@@ -3343,6 +3343,11 @@ async function apply(agent, action) {
         contabilidade +
         (done.real?.signature ? ` · ON-CHAIN ${String(done.real.signature).slice(0, 8)}…` : "") + ` — ${done.reason}`,
         { closed: done, ...(done.real ? { real: done.real } : {}) });
+      /* O RETRATO SAI AGORA, nao no fim do ciclo. Hoje um deploy caiu 14
+         segundos depois de uma venda e o fechamento nunca foi salvo: a
+         operacao existe na corrente e o placar dela dizia zero trades.
+         Fechar posicao e o evento mais caro de perder que existe aqui. */
+      try { saveCheckpoint(); } catch { /* perder o retrato nao desfaz a venda */ }
       return;
     }
 
@@ -3852,11 +3857,52 @@ async function reconciliarComACarteira() {
   }
   const fantasmas = reais.filter((p) => !tem.has(p.market));
   if (!fantasmas.length) return;
+
+  /* NAO DESCARTA: FECHA.
+     Antes isto so tirava a posicao do quadro. Mas "a carteira nao tem mais o
+     token" quase sempre quer dizer QUE ELA VENDEU — e jogar fora significa
+     perder o trade do placar, do historico e das licoes. Foi o que aconteceu
+     hoje. A propria frase do codigo antigo ja dizia "a corrente e o registro";
+     agora ele le o registro em vez de so citar. */
+  for (const f of fantasmas) {
+    const ag = state.agents[f.agent];
+    let fechou = false;
+    if (ag) {
+      try {
+        const ops = await onchain.historicoDeTrades(agentAddress(f.agent), { limite: 20 });
+        const venda = ops.filter((o) => o.mint === f.market && o.tokenDelta < 0).pop();
+        if (venda) {
+          const done = broker.close(ag, f, state, "the chain says this was sold", 0);
+          done.real = { signature: venda.assinatura, recibo: venda, recuperado: true };
+          const preco = await solPriceUsd();
+          if (preco > 0 && venda.solDelta != null) {
+            const entrou = venda.solDelta * preco;
+            const saiu = Math.abs(f.real?.recibo?.solDelta ?? f.real?.spentSol ?? 0) * preco;
+            const real = entrou - saiu;
+            const ajuste = real - done.realized;
+            ag.dayPnl += ajuste;
+            ag.earned.trade += ajuste;
+            done.realized = real;
+            done.fromChain = true;
+          }
+          state.closed.push(done);
+          emit("trade", f.agent,
+            `RECOVERED FROM THE CHAIN — ${f.market.slice(0, 8)}… was sold and the record was lost ` +
+            `in a restart. ${done.realized >= 0 ? "+" : ""}$${done.realized.toFixed(2)}` +
+            (venda.precoSol ? ` at ${venda.precoSol.toExponential(4)} SOL/token all-in` : "") +
+            ". The chain is the record.",
+            { closed: done, real: done.real });
+          fechou = true;
+        }
+      } catch { /* nao conseguiu ler a corrente: cai no comportamento antigo */ }
+    }
+    if (!fechou)
+      emit("system", f.agent,
+        `POSITION DROPPED — the board said ${f.market.slice(0, 8)}… was open, the wallet does not hold it, ` +
+        "and no sale of it turned up on the chain. Treat this position as unaccounted for, not as a win or a loss.");
+  }
   state.positions = (state.positions || []).filter((p) => !fantasmas.includes(p));
-  for (const f of fantasmas)
-    emit("system", f.agent,
-      `POSITION DROPPED — the board said ${f.market.slice(0, 8)}… was open, the wallet does not hold it. ` +
-      "The chain is the record; the board was wrong.");
+  try { saveCheckpoint(); } catch { /* idem */ }
 }
 
 async function turn(agent) {
@@ -4776,9 +4822,80 @@ async function rollDay() {
   emit("system", null, `— DAY ${state.day} —`);
 }
 
+/* ============================================================================
+   O QUE O DISCO PERDEU, A CORRENTE LEMBRA. (02/09/2026)
+
+   Roda uma vez por boot. Le o historico de operacoes dela na blockchain, pareia
+   compra com venda, e registra os ciclos que NAO estao no placar.
+
+   O que NAO faz, de proposito:
+     - nao mexe na carteira: ela ja vem da corrente e ja esta certa
+     - nao mexe no P&L do dia: o dinheiro ja andou, e um numero pulando sozinho
+       no meio do dia e exatamente o tipo de coisa que a ensinou a nao confiar
+       nos numeros daqui
+     - so pareia o que e INEQUIVOCO (ver parearCiclos): venda que casa exata com
+       a compra anterior do mesmo mint. Na duvida, fica de fora.
+     - e IDEMPOTENTE: a chave e a assinatura da venda. Rodar dez vezes registra
+       uma vez so.
+
+   E ela e AVISADA do que entrou e de onde veio. Registro aparecendo sem
+   explicacao seria o mesmo pecado que o numero impossivel.
+   ========================================================================== */
+async function recuperarCiclosPerdidos() {
+  const ela = state.agents[ORDER[0]];
+  if (!ela || !cfg.realTrading) return;
+  /* O endereco vem da chave; se ela nao estiver carregada, serve o que o
+     leitor de saldo ja gravou no estado. Ler a corrente nao precisa de chave. */
+  const addr = agentAddress(ela.id) || ela.address || null;
+  if (!addr) return;
+  try {
+    const jaTem = new Set((state.closed ?? [])
+      .map((c) => c.real?.signature).filter(Boolean));
+    const ops = await onchain.historicoDeTrades(addr, { limite: 30 });
+    const ciclos = onchain.parearCiclos(ops).filter((c) => !jaTem.has(c.venda.assinatura));
+    if (!ciclos.length) return;
+
+    const preco = await solPriceUsd();
+    let somaSol = 0;
+    for (const c of ciclos) {
+      const liquidoSol = c.compra.solDelta + c.venda.solDelta;   // negativo = prejuizo
+      somaSol += liquidoSol;
+      ela.stats.trades++;
+      if (liquidoSol > 0) ela.stats.wins++; else ela.stats.losses++;
+      state.closed.push({
+        id: `rec${c.venda.assinatura.slice(0, 8)}`,
+        agent: ela.id, venue: "pump", market: c.compra.mint ?? "?", side: "buy",
+        sizeUsd: preco > 0 ? Math.abs(c.compra.solDelta) * preco : 0,
+        entry: c.compra.precoSol ?? 0, price: c.venda.precoSol ?? 0,
+        realized: preco > 0 ? liquidoSol * preco : 0,
+        reason: "recovered from the chain — the record was lost in a restart",
+        closedTick: state.tick, partial: false, remaining: 0,
+        fromChain: true, recuperado: true,
+        real: { signature: c.venda.assinatura, recibo: c.venda, entrada: c.compra },
+      });
+    }
+    if (state.closed.length > 200) state.closed = state.closed.slice(-150);
+    emit("system", ela.id,
+      `${ciclos.length} COMPLETED TRADE${ciclos.length > 1 ? "S" : ""} RECOVERED FROM THE CHAIN. ` +
+      `They happened, the money already moved through your wallet, and the record of them was lost ` +
+      `when the engine restarted. Net across them: ${somaSol >= 0 ? "+" : ""}${somaSol.toFixed(6)} SOL` +
+      (preco > 0 ? ` (about ${somaSol >= 0 ? "+" : "-"}$${Math.abs(somaSol * preco).toFixed(2)})` : "") +
+      `. Your trade count was wrong before this and is right now. Today's P&L line does NOT include ` +
+      `them — the money left the wallet when it left, and moving a day number backwards would be its ` +
+      `own kind of lie. Read them: the entry and exit prices are both on the chain.`);
+    log(`Recuperados ${ciclos.length} ciclos da corrente (${somaSol.toFixed(6)} SOL liquido).`);
+    saveCheckpoint();
+  } catch (e) {
+    log(`Nao consegui recuperar ciclos da corrente: ${String(e.message).slice(0, 120)}`);
+  }
+}
+
 async function loop() {
   // A VIDA CONTINUA DE ONDE PAROU — se houver de onde.
   const retomada = loadCheckpoint();
+  /* E o que a corrente lembra e o disco esqueceu. Dispara e nao espera: o show
+     nao pode ficar preso num RPC lento pra subir. */
+  recuperarCiclosPerdidos().catch(() => {});
   // Coma financeiro: treasury zerada. Anuncia uma vez, espera dinheiro.
   let emComa = false;
   // Marco zero DESTA sessao — MAX_TICKS conta a partir daqui, nao do tick
@@ -5085,7 +5202,7 @@ const log = (m) => process.stdout.write(`${redact(String(m))}\n`);
 const trim = (s, n) => (String(s).length > n ? String(s).slice(0, n) + "…" : String(s));
 
 // Exportado para teste. So roda o mundo quando chamado direto, nunca ao importar.
-export { state, cfg, lerShowStart, rollDay, runSchedule, apply, newAgent, buildSystem, reloadLiveConfig,
+export { state, cfg, lerShowStart, rollDay, recuperarCiclosPerdidos, runSchedule, apply, newAgent, buildSystem, reloadLiveConfig,
   incomeMix, publish, saveCheckpoint, loadCheckpoint, situationFor, ORDER, SOZINHA };
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
