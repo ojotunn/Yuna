@@ -220,14 +220,27 @@ export function _dropForTest(mint) {
    janela, foi publicado de verdade; se nao, o servidor aceitou e engoliu.
    Sem sala aberta nao da pra confirmar: devolve true para nao inventar uma
    falha que nao sei que existe. */
+/* A PROVA E A MENSAGEM ESTAR NA LISTA QUE A SALA MOSTRA, nao no conjunto de
+   ids ja vistos. `seen` serve pra nao processar a mesma mensagem duas vezes e
+   guarda id de tudo que passou pelo socket — inclusive o eco privado que a
+   pump devolve pra quem foi silenciado. `messages` e o que um terceiro leria. */
+function naListaDaSala(room, id) {
+  return (room.messages ?? []).some((m) => m && m.id === id);
+}
+
 function confirmarEntrega(mint, id, janelaMs = 4000) {
   const room = rooms.get(mint);
-  if (!room || room.closed) return Promise.resolve(true);
-  if (room.seen?.has(id)) return Promise.resolve(true);
+  /* SEM SALA, A RESPOSTA E "NAO SEI" — e "nao sei" nao e "sim".
+     Isto devolvia `true` sem ter olhado nada: se a conexao da sala tivesse
+     caido no instante do envio, toda mensagem virava "entregue". Medido em
+     02/09: duas dela marcadas como entregues e ZERO aparecendo nas 50
+     mensagens que a sala mostra. Melhor ela saber que nao sabe. */
+  if (!room || room.closed) return Promise.resolve(false);
+  if (naListaDaSala(room, id)) return Promise.resolve(true);
   return new Promise((resolve) => {
     const fim = Date.now() + janelaMs;
     const olhar = () => {
-      if (room.seen?.has(id)) return resolve(true);
+      if (naListaDaSala(room, id)) return resolve(true);
       if (Date.now() >= fim) return resolve(false);
       setTimeout(olhar, 250);
     };
