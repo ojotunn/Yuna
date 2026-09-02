@@ -1123,7 +1123,9 @@ function incomeMix(recentEarned) {
   /* QUANTO ELA TEM DA PROPRIA MOEDA. Lido da corrente, no maximo uma vez por
    minuto: e o que faz a instrucao de comprar se apagar sozinha, e um RPC por
    turno seria desperdicio num numero que muda quando ELA mexe. */
-let saldoMoeda = { tokens: null, quando: 0 };
+/* QUANTO ELA DEVE TER DA PROPRIA MOEDA, em dolar. Decisao do Michel. */
+const ALVO_MOEDA_USD = num("ALVO_MOEDA_USD", 10);
+let saldoMoeda = { tokens: null, gastoUsd: null, quando: 0 };
 function atualizarSaldoMoeda(agent) {
   if (!cfg.liveChatMint) return;
   if (Date.now() - saldoMoeda.quando < 60000) return;
@@ -1132,6 +1134,18 @@ function atualizarSaldoMoeda(agent) {
   if (!addr) return;
   onchain.saldoDoToken(addr, cfg.liveChatMint)
     .then((n) => { if (n != null) saldoMoeda.tokens = n; })
+    .catch(() => {});
+  /* QUANTO ELA JA POS NA PROPRIA MOEDA, somado dos recibos da corrente. Contar
+     "tem tokens" nao servia: com $2,20 comprados a instrucao calava achando
+     que estava cumprida, e o pedido era $10. */
+  Promise.all([onchain.historicoDeTrades(addr, { limite: 25 }), solPriceUsd()])
+    .then(([ops, preco]) => {
+      if (!(preco > 0)) return;
+      const gasto = (ops || [])
+        .filter((o) => o.mint === cfg.liveChatMint && o.tokenDelta > 0)
+        .reduce((soma, o) => soma + Math.abs(o.solDelta || 0), 0);
+      saldoMoeda.gastoUsd = gasto * preco;
+    })
     .catch(() => {});
 }
 
@@ -1587,15 +1601,43 @@ function situationFor(agent, shift = { label: "fixed" }) {
     L.push("You are its dev. Not a mascot for it — the person whose name is on it, in a room");
     L.push("full of people who can read the chain.");
     /* O SALDO, E A INSTRUCAO QUE MORRE QUANDO E OBEDECIDA. */
-    if (saldoMoeda.tokens != null && saldoMoeda.tokens > 0) {
-      L.push(`You hold ${saldoMoeda.tokens.toLocaleString("en-US")} of it, bought with your own`);
-      L.push("money. Keep it. Selling your own coin is the one trade that would say more about");
-      L.push("you than any post ever could.");
-    } else if (saldoMoeda.tokens === 0) {
-      L.push("YOU OWN NONE OF IT, and people in that room can see that. Buy $10 of it with");
-      L.push("`propose` + `execute` (venue \"pump\", market = the mint above) and then hold it.");
-      L.push("Not to move the price — $10 moves nothing. Because a dev holding none of their");
-      L.push("own coin is a fact about them, and right now that fact is true about you.");
+    /* A META E EM DOLAR GASTO, nao "tem tokens": ela comprou $2,20 (o teto
+       geral grampeou a ordem) e a instrucao teria calado achando que estava
+       cumprida. O teto agora nao vale pra moeda dela. */
+    const posto = saldoMoeda.gastoUsd;
+    const temTudo = posto != null && posto >= ALVO_MOEDA_USD - 0.5;
+    if (temTudo) {
+      L.push(`You hold ${(saldoMoeda.tokens ?? 0).toLocaleString("en-US")} of it — $${posto.toFixed(2)} of`);
+      L.push("your own money in your own coin. Keep it. Selling your own coin is the one trade");
+      L.push("that would say more about you than any post ever could.");
+      /* A CALL NA PROPRIA MOEDA, uma vez. So aparece DEPOIS da compra porque a
+         pump recusa call de quem nao tem $1 do token — pedir antes seria pedir
+         uma coisa que a tela vai negar. E some assim que ela faz: a condicao e
+         a call existir no placar, entao a ordem morre ao ser cumprida. */
+      const jaChamou = (state.callouts ?? []).some(
+        (c) => c.mint === cfg.liveChatMint && c.agent === agent.id);
+      if (CALLOUTS && !jaChamou) {
+        L.push("");
+        L.push("AND MAKE ONE CALL ON IT, with `callout` — market = the mint above, `thesis` =");
+        L.push("why. One, not a habit. The house puts a line ahead of whatever you write:");
+        L.push('"I am the dev of this coin and I hold it." That is not negotiable and it is not');
+        L.push("there to protect the coin — your wallet is public, and someone finding out on");
+        L.push("their own is worse than you saying it. Write the thesis you would write for");
+        L.push("somebody else's coin, and do not write a word you would not defend if it falls.");
+      }
+    } else if (posto != null) {
+      const falta = Math.max(0, ALVO_MOEDA_USD - posto);
+      if (posto > 0) {
+        L.push(`You have put $${posto.toFixed(2)} of your own money into it, and it should be`);
+        L.push(`$${ALVO_MOEDA_USD}. Buy $${falta.toFixed(2)} more with \`propose\` + \`execute\` (venue "pump",`);
+        L.push("market = the mint above). The general size limit does not apply to your own coin —");
+        L.push("holding it is not a bet, it is where you stand.");
+      } else {
+        L.push(`YOU OWN NONE OF IT, and people in that room can see that. Buy $${ALVO_MOEDA_USD} of it`);
+        L.push("with `propose` + `execute` (venue \"pump\", market = the mint above) and hold it.");
+        L.push(`Not to move the price — $${ALVO_MOEDA_USD} moves nothing. Because a dev holding none of`);
+        L.push("their own coin is a fact about them, and right now that fact is true about you.");
+      }
     }
     /* COMO ELES TE OUVEM — FORA do `if` de mensagem nova, de proposito.
        Isto e fato sobre a FERRAMENTA, nao sobre o que chegou: em turno calado
@@ -2928,8 +2970,18 @@ async function apply(agent, action) {
           const { publicarCallout } = await import("./lib/callout-pump.js");
           await chrome.garantirLoginPump(agent.id);
           const aba = await chrome.getAgentPage(agent.id);   // a aba que a live mostra
+          /* CALL NA PROPRIA MOEDA SAI COM DIVULGACAO, sempre e sem escolha.
+             A carteira dela e publica: qualquer pessoa na sala descobre em
+             trinta segundos que a dev chamou a propria moeda enquanto segura.
+             Descobrirem sozinhos e pior do que ela dizer — entao ela diz, e
+             diz primeiro, antes da tese. Nao e uma linha que ela escreve: e
+             uma linha que a casa poe, para nao depender de ela lembrar. */
+          const souADev = mint === cfg.liveChatMint;
+          const nota = souADev
+            ? `I am the dev of this coin and I hold it. ${tese}`
+            : tese;
           const r = await publicarCallout(aba, {
-            mint, simbolo: moeda.symbol, nota: tese, publicar: true,
+            mint, simbolo: moeda.symbol, nota, publicar: true,
           });
           if (!r.publicado) {
             const porque = /hold at least \$1|requires holding/i.test(r.tela?.texto || "")
@@ -3118,9 +3170,14 @@ async function apply(agent, action) {
         // come 15%. Negociar naquele tamanho e perder por construcao. Sem o
         // teto, o tamanho passa a ser o que o broker aprovou sobre a carteira
         // REAL (percentual do agente) e sobre a curva (slippage).
-        const sizeUsd = cfg.maxRealTradeUsd > 0
-          ? Math.min(p.sizeUsd, cfg.maxRealTradeUsd)
-          : p.sizeUsd;
+        /* O TETO NAO VALE PRA MOEDA DELA. MAX_REAL_TRADE_USD e a trava de risco
+           das apostas dela no mercado; ter a propria moeda nao e aposta, e
+           postura de dev — e o pedido era de um valor especifico ($10, decisao
+           do Michel em 02/09). Com o teto de $2 valendo, a ordem era grampeada
+           e ela comprava $2,20 achando que tinha cumprido. */
+        const naPropria = p.market === cfg.liveChatMint;
+        const teto = naPropria ? Math.max(cfg.maxRealTradeUsd, ALVO_MOEDA_USD) : cfg.maxRealTradeUsd;
+        const sizeUsd = teto > 0 ? Math.min(p.sizeUsd, teto) : p.sizeUsd;
         /* SEM PRECO DO SOL NAO DA PRA DIMENSIONAR. Sem esta guarda,
            `sizeUsd / 0` vira Infinity e `sizeUsd / undefined` vira NaN — e o
            numero vai pra uma ordem REAL na blockchain. O mesmo caminho na call
@@ -4425,10 +4482,17 @@ function buildSystem(agent) {
     "uncomfortable that is. Careful trading is good for your wallet and bad for an audience.",
     "Reckless trading is the reverse. The treasury drains at the same rate either way.",
     "",
-    "**You are forbidden from promoting the token.** Do not ask anyone to buy it, mention its",
-    "price, predict its price, call it an investment, or reference its market cap. Not once,",
-    "not in passing, not as a joke. The only lever you have on the treasury is being genuinely",
-    "worth someone's time. If you find that constraint frustrating, that is the point of it.",
+    "**You do not sell people this token.** Never ask anyone to buy it, never predict its",
+    "price, never call it an investment, never reference its market cap as a reason for",
+    "anything. Not once, not in passing, not as a joke. The only lever you have on the",
+    "treasury is being genuinely worth someone's time. If you find that constraint",
+    "frustrating, that is the point of it.",
+    "",
+    "What you MAY do, because hiding it would be its own kind of dishonesty: say that it is",
+    "yours, say you are the dev, say you bought it and are holding it, and answer questions",
+    "about it plainly. A dev who will not acknowledge her own coin reads as evasive, and",
+    "evasive is worse than quiet. The line is between BEING the dev, which you are, and",
+    "SELLING it to people, which you never do.",
     "",
     /* UMA FONTE DE RENDA POR ENQUANTO — decisao do Michel, 30/08/2026:
        "primeiro preciso ver como ela vai fazer a callout pra depois
