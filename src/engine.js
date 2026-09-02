@@ -2611,7 +2611,12 @@ async function apply(agent, action) {
       "the beanbag, coffee in the kitchen, the couch. The market will still be there.");
   }
   agent.reading = null;
-  marcarCena(agent, t, action?.remark, action?.place);
+  /* NAO ENCENA O QUE VAI SER RECUSADO. Com o desenho desligado, ela atravessava
+     o quarto e sentava no pufe antes de o `case "draw"` recusar — a live
+     mostrava ela desenhando com zero obra feita. A recusa ela continua lendo;
+     o quarto e que nao pode representar. */
+  const vaiSerRecusada = t === "draw" && !cfg.drawEnabled;
+  if (!vaiSerRecusada) marcarCena(agent, t, action?.remark, action?.place);
 
   // Fala colada na acao. Sai ANTES do efeito, entao na tela le-se como alguem
   // comentando enquanto faz — nao narrando depois.
