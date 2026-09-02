@@ -1731,11 +1731,23 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
     const solPosto = [...porAssinatura.values()].reduce((a, b) => a + b, 0);
     const posto = solPosto > 0 ? solPosto * (saldoMoeda.solUsd || 0)
                 : saldoMoeda.gastoUsd;
-    const temTudo = posto != null && posto >= ALVO_MOEDA_USD - 0.5;
-    if (temTudo) {
-      L.push(`You hold ${(saldoMoeda.tokens ?? 0).toLocaleString("en-US")} of it — $${posto.toFixed(2)} of`);
-      L.push("your own money in your own coin. Keep it. Selling your own coin is the one trade");
-      L.push("that would say more about you than any post ever could.");
+    /* TRES ESTADOS, E O DO MEIO E O QUE FALTAVA.
+         tokens === null -> NAO MEDIDO: nao se fala da carteira dela.
+         tokens > 0      -> ela TEM. Nunca dizer o contrario, nunca mandar comprar.
+         tokens === 0    -> medido e vazio de verdade.
+       `posto` (quanto ela pos, parenado por historico de trade) volta a ser so
+       o VALOR quando da pra saber — ele nao decide mais se ela tem ou nao. Era
+       ele que produzia "YOU OWN NONE OF IT" com 1,28 milhao de tokens na
+       carteira, porque nasce vazio a cada restart. Custou 35 turnos recusados
+       e o motor parado. */
+    const temMoeda = saldoMoeda.tokens != null && saldoMoeda.tokens > 0;
+    const semMoeda = saldoMoeda.tokens != null && saldoMoeda.tokens <= 0;
+    const chegou = temMoeda && (posto == null || posto >= ALVO_MOEDA_USD - 0.5);
+    if (chegou) {
+      const quanto = posto != null ? ` — $${posto.toFixed(2)} of your own money in it` : "";
+      L.push(`You hold ${saldoMoeda.tokens.toLocaleString("en-US")} of your own coin${quanto}.`);
+      L.push("Keep it. Selling your own coin is the one trade that would say more about you");
+      L.push("than any post ever could.");
       /* A CALL NA PROPRIA MOEDA, uma vez. So aparece DEPOIS da compra porque a
          pump recusa call de quem nao tem $1 do token — pedir antes seria pedir
          uma coisa que a tela vai negar. E some assim que ela faz: a condicao e
@@ -1755,25 +1767,34 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
         L.push("not write a price, a target, or a reason for anyone else to buy — that part of");
         L.push("the rule does not move.");
       }
-    } else if (posto != null) {
-      const falta = Math.max(0, ALVO_MOEDA_USD - posto);
-      if (posto > 0) {
+    } else if (temMoeda || semMoeda) {
+      const falta = Math.max(0, ALVO_MOEDA_USD - (posto ?? 0));
+      if (temMoeda) {
         /* NAO E UMA OPERACAO, e ela precisa ouvir isso com todas as letras.
            Ela matou a ordem dos $7,75 aplicando a propria regra de nao
            aumentar posicao por inquietacao — regra boa, premissa errada. O
            prompt pedia com vocabulario de trade, entao ela julgou como trade. */
         L.push(`THIS IS NOT A TRADE, and do not size it like one. The house decided that its`);
-        L.push(`dev holds $${ALVO_MOEDA_USD} of it. You have $${posto.toFixed(2)} in. Put in $${falta.toFixed(2)} more —`);
+        L.push(`dev holds $${ALVO_MOEDA_USD} of it. You have $${(posto ?? 0).toFixed(2)} in. Put in $${falta.toFixed(2)} more —`);
         L.push('`propose` + `execute`, venue "pump", market = the mint above.');
         L.push("It is not a position, it is not scored, it does not count against your sizing");
         L.push("rules and it is not you adding to a winner out of restlessness. You are not");
         L.push("entering it to exit it — there is no exit plan because there is no exit. It is");
         L.push("what the person whose name is on a coin holds of it.");
-      } else {
-        L.push(`YOU OWN NONE OF IT, and people in that room can see that. Buy $${ALVO_MOEDA_USD} of it`);
-        L.push("with `propose` + `execute` (venue \"pump\", market = the mint above) and hold it.");
-        L.push(`Not to move the price — $${ALVO_MOEDA_USD} moves nothing. Because a dev holding none of`);
-        L.push("their own coin is a fact about them, and right now that fact is true about you.");
+      } else if (saldoMoeda.tokens != null && saldoMoeda.tokens <= 0) {
+        /* SO QUANDO A CARTEIRA FOI LIDA E ESTA MESMO VAZIA.
+           Antes esta linha saia sempre que a contabilidade por historico de
+           trade voltava 0 — e ela voltava 0 a cada restart, porque `saldoMoeda`
+           e variavel de modulo e nasce vazia. Com 1.288.740 tokens na carteira,
+           o prompt afirmava "voce nao tem nenhum" e mandava comprar, todo
+           turno. Foram 35 turnos recusados seguidos ate o motor parar.
+           `tokens === null` quer dizer NAO MEDIDO, nunca zero: enquanto nao
+           houver leitura, este bloco fica calado. Ela decide em cima do que
+           este texto diz, entao ele nao pode inventar o saldo dela. */
+        L.push(`Your wallet holds none of your own coin right now. The house decided its dev`);
+        L.push(`holds $${ALVO_MOEDA_USD} of it — not to move the price, since $${ALVO_MOEDA_USD} moves nothing, but`);
+        L.push("because what the person whose name is on a coin holds of it is a fact people");
+        L.push("can read off the chain. It is yours to do when you judge the moment.");
       }
     }
     /* COMO ELES TE OUVEM — FORA do `if` de mensagem nova, de proposito.
