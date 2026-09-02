@@ -151,6 +151,10 @@ const ACTION_SCHEMA = {
             // PERGUNTAR A ALGUEM DE FORA. Reusa `query` (a pergunta) e
             // `reason` (por que ela precisa saber). A resposta chega num turno
             // depois — quem responde leva minutos, e ela nao espera parada.
+            // A OFICINA. Ela descreve uma ferramenta e alguem mais capaz que
+            // ela constroi, roda e devolve. Reusa `text` (o que construir) e
+            // `reason` (pra que serve). Enum e de graca.
+            "build",
             "consult",
             "ask",
             "post",

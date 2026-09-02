@@ -706,6 +706,18 @@ const servidor = http.createServer(async (req, res) => {
     });
   }
 
+  /* O QUE ELA CONSTRUIU. Publica: a persona dela sempre disse que ela
+     programa, e isto e a prova. O relatorio traz o que a ferramenta NAO faz —
+     e a metade mais honesta, e fica visivel. */
+  if (url.pathname === "/api/construcoes") {
+    const chk = process.env.CHECKPOINT_FILE || path.join(ROOT, "src", "data", "checkpoint-yuna.json");
+    let cs = [];
+    try { cs = JSON.parse(fs.readFileSync(chk, "utf8"))?.construcoes ?? []; } catch { /* nada ainda */ }
+    return enviar(res, 200, {
+      obras: cs.filter((c) => c.estado === "pronto").sort((a, b) => b.t - a.t).slice(0, 30),
+    });
+  }
+
   /* ===================== O PAINEL DO X =====================
      O X barrou o login automatizado (deteccao de navegador, nao de conta nem
      de IP — o Michel confirmou deslogando do Chrome dele e religando). Entao

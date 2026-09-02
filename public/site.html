@@ -279,6 +279,13 @@
     <div id="pedidos"></div>
   </div>
 
+  <!-- O QUE ELA CONSTRUIU. A persona dela diz que ela programa desde o
+       primeiro dia; esta secao e a primeira prova disso. -->
+  <div class="caixa" id="cx-obras" style="display:none">
+    <h2>she had it built <span class="sel" id="sel-obras2"></span></h2>
+    <div id="obras2"></div>
+  </div>
+
   <!-- AS CONVERSAS. Ela pergunta a alguem de fora e a resposta discorda dela
        com frequencia — e o oposto de um bot que concorda consigo mesmo. -->
   <div class="caixa" id="cx-conversas" style="display:none">
@@ -478,6 +485,53 @@ fetch("/api/pedidos", { cache: "no-store" })
    um modelo diferente do dela, de proposito: duas instancias do mesmo modelo
    concordam entre si, e concordar nao ajuda ninguem.
    --------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------
+   O QUE ELA MANDOU CONSTRUIR. Ela descreve a ferramenta; quem escreve e um
+   modelo acima do dela, que roda o codigo antes de dizer que funciona. O
+   relatorio inclui o que a coisa NAO faz — e essa parte fica visivel aqui,
+   porque e o que impede ela (e quem le) de confiar demais na ferramenta.
+   --------------------------------------------------------------------- */
+fetch("/api/construcoes", { cache: "no-store" })
+  .then((r) => r.json())
+  .then((d) => {
+    const lista = d.obras || [];
+    if (!lista.length) return;
+    const cx = document.getElementById("obras2");
+    for (const o of lista) {
+      const it = document.createElement("div");
+      it.className = "item";
+
+      const w = document.createElement("div");
+      w.className = "quando";
+      w.textContent = quandoTxt(o.t) +
+        (o.arquivos?.length ? "  ·  " + o.arquivos.map((a) => a.arquivo).join(", ") : "");
+      it.appendChild(w);
+
+      const q = document.createElement("p");
+      q.className = "fala";
+      q.textContent = o.oQue || "";            // o pedido dela
+      it.appendChild(q);
+
+      if (o.paraQue) {
+        const p = document.createElement("p");
+        p.className = "resposta";
+        p.textContent = "what she wanted it for: " + o.paraQue;
+        it.appendChild(p);
+      }
+      if (o.resumo) {
+        const r2 = document.createElement("p");
+        r2.className = "resposta";
+        r2.textContent = o.resumo;             // inclui o "o que nao faz"
+        it.appendChild(r2);
+      }
+      cx.appendChild(it);
+    }
+    document.getElementById("sel-obras2").textContent =
+      lista.length + (lista.length === 1 ? " tool" : " tools");
+    document.getElementById("cx-obras").style.display = "";
+  })
+  .catch(() => {});
+
 fetch("/api/consultas", { cache: "no-store" })
   .then((r) => r.json())
   .then((d) => {

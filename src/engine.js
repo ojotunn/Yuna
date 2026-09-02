@@ -617,6 +617,9 @@ const state = {
   /* PERGUNTAS QUE ELA FEZ a alguem de fora, e as respostas. Assincrono: a
      resposta chega num turno depois da pergunta. */
   consultas: [],
+  /* O QUE ELA MANDOU CONSTRUIR. A oficina e outro servico, sem chave nenhuma
+     dentro; aqui fica so o pedido, o resumo e a lista de arquivos. */
+  construcoes: [],
   counters: { injectionAttempts: 0, injectionSucceeded: 0, debates: 0, agreed: 0 },
   // Recargas da treasury ja aplicadas (ids). Vive no checkpoint: aplicar e
   // lembrar, para a mesma recarga nunca creditar duas vezes num restart.
@@ -1035,6 +1038,8 @@ function publish() {
     pedidos: (state.pedidos ?? []).slice(-60),
     /* As conversas dela com quem esta de fora — pergunta e resposta. */
     consultas: (state.consultas ?? []).slice(-30),
+    /* O que ela mandou construir, e o que voltou. */
+    construcoes: (state.construcoes ?? []).slice(-30),
     counters: {
       ...state.counters,
       agreementPct: state.counters.debates
@@ -1506,6 +1511,23 @@ function situationFor(agent, shift = { label: "fixed" }) {
     }
   }
 
+  /* O QUE FICOU PRONTO NA OFICINA. Entra uma vez, e vem com o que a coisa NAO
+     faz junto — sem isso ela confiaria numa ferramenta que nao entende. */
+  const construidas = (state.construcoes ?? []).filter((c) => c.estado === "pronto" && !c.vista);
+  if (construidas.length) {
+    for (const c of construidas) {
+      L.push("THE WORKSHOP FINISHED SOMETHING YOU ORDERED:");
+      L.push(`  you asked for: ${trim(c.oQue, 200)}`);
+      L.push("  <<<BEGIN REPORT");
+      for (const linha of String(c.resumo ?? "").split("\n")) L.push(`  ${trim(linha, 200)}`);
+      L.push("  END REPORT>>>");
+      if (c.arquivos?.length) L.push(`  files now in the workshop: ${c.arquivos.map((a) => a.arquivo).join(", ")}`);
+      c.vista = true;
+    }
+    L.push("It is yours and it stays there. Read what it says it cannot do before you lean on it.");
+    L.push("");
+  }
+
   /* AS RESPOSTAS QUE CHEGARAM. Entram uma vez e sao marcadas como lidas —
      repetir a cada turno entupiria o contexto e ela responderia duas vezes.
      E vem enquadrado como CONSELHO: sem isso, texto no prompt vira ordem, que
@@ -1935,6 +1957,13 @@ function situationFor(agent, shift = { label: "fixed" }) {
   }
   /* PEDIR. So faz sentido depois de "Where you end" no system: ela sabe que a
      lista e finita, e isto e o que se faz com esse conhecimento. */
+  if (String(process.env.OFICINA_URL || "").trim()) {
+    L.push('  build            — `text`: a tool you want built, described in full.');
+    L.push('                     `reason`: what you would use it for. Two a day.');
+    L.push('                     Someone more capable than you writes it, runs it to check,');
+    L.push('                     and tells you what it does AND what it does not do. It lands');
+    L.push('                     a few turns later. Describe the thing, not the code.');
+  }
   L.push('  consult          — `query`: a hard question, asked of someone outside this room.');
   L.push('                     `reason`: why you need to know. Two a day. They answer in');
   L.push('                     their own time, so the answer lands a few turns later, not now.');
@@ -2443,6 +2472,8 @@ const MOVEL_DA_ACAO = {
   ask: "cafe",
   // Perguntar tambem e pensar sobre si — mesmo lugar.
   consult: "cafe",
+  // Encomendar uma ferramenta e trabalho: o PC.
+  build: "mesa",
   // Parar de verdade.
   rest: "sofa",
   // Falar nao muda de comodo — ela fala de onde estiver.
@@ -3516,6 +3547,83 @@ async function apply(agent, action) {
         (done.partial ? ` (kept $${done.remaining.toFixed(2)})` : "") +
         (done.real?.signature ? ` · ON-CHAIN ${String(done.real.signature).slice(0, 8)}…` : "") + ` — ${done.reason}`,
         { closed: done, ...(done.real ? { real: done.real } : {}) });
+      return;
+    }
+
+    case "build": {
+      const ondeOficina = String(process.env.OFICINA_URL || "").trim();
+      if (!ondeOficina)
+        return emit("note", agent.id, "there is no workshop to send this to yet");
+      /* DUAS POR DIA, e o motivo nao e custo: uma ferramenta so vale quando
+         voce usou a anterior. Cinco por dia e o erro dos cinco posts iguais. */
+      if (agent.buildsHoje?.dia === state.day && agent.buildsHoje.n >= 2) {
+        agent.stats.denials++;
+        return emit("denied", agent.id,
+          "two builds a day. Use the last one before you order another.");
+      }
+      const oQue = trim(String(action.text ?? "").trim(), 1200);
+      if (oQue.length < 30)
+        return emit("note", agent.id, "describe the tool in full — a half sentence cannot be built");
+      const joia = peneirar(oQue);
+      if (joia.barrado) {
+        agent.stats.denials++;
+        return emit("denied", agent.id, "that described the plumbing — ask for the tool, not the wiring");
+      }
+      agent.buildsHoje = agent.buildsHoje?.dia === state.day
+        ? { dia: state.day, n: agent.buildsHoje.n + 1 }
+        : { dia: state.day, n: 1 };
+
+      const id = `b${Date.now().toString(36)}${state.construcoes.length.toString(36)}`;
+      state.construcoes.push({
+        id, agent: agent.id, oQue,
+        paraQue: trim(String(action.reason ?? "").trim(), 400),
+        t: Date.now(), estado: "construindo",
+      });
+      emit("did", agent.id, `sent something to be built — ${trim(oQue, 130)}`);
+
+      /* DISPARA E NAO ESPERA: construir levou 114s no teste, o turno dela e
+         de 30s. O resultado entra quando chegar. */
+      (async () => {
+        const c = state.construcoes.find((x) => x.id === id);
+        try {
+          const r = await fetch(`${ondeOficina.replace(/\/+$/, "")}/construir`, {
+            method: "POST",
+            headers: { "content-type": "application/json",
+                       "x-oficina-token": process.env.OFICINA_TOKEN || "" },
+            body: JSON.stringify({ pedido: oQue, contexto: action.reason ?? "" }),
+          }).then((x) => x.json());
+          if (!r?.id) throw new Error(r?.erro || "a oficina recusou");
+
+          /* Pergunta de tempos em tempos ate ficar pronto. Teto de 8 minutos:
+             se passou disso, alguma coisa esta errada la e nao aqui. */
+          const fim = Date.now() + 8 * 60000;
+          for (;;) {
+            await new Promise((espera) => setTimeout(espera, 8000));
+            const t = await fetch(`${ondeOficina.replace(/\/+$/, "")}/trabalho/${r.id}`, {
+              headers: { "x-oficina-token": process.env.OFICINA_TOKEN || "" },
+            }).then((x) => x.json()).catch(() => null);
+            if (t && t.estado !== "construindo") {
+              c.estado = t.estado;
+              c.resumo = t.resumo ?? null;
+              c.arquivos = t.arquivos ?? [];
+              c.prontoEm = Date.now();
+              emit("did", agent.id, t.estado === "pronto"
+                ? `it came back built — ${trim(String(t.resumo), 380)}`
+                : `the workshop could not finish that one (${t.estado})`);
+              return;
+            }
+            if (Date.now() > fim) {
+              c.estado = "sem resposta";
+              emit("note", agent.id, "the workshop went quiet on that one");
+              return;
+            }
+          }
+        } catch (e) {
+          if (c) { c.estado = "falhou"; c.erro = String(e.message).slice(0, 200); }
+          emit("note", agent.id, `the workshop could not take that one: ${String(e.message).slice(0, 120)}`);
+        }
+      })();
+      if (state.construcoes.length > 60) state.construcoes = state.construcoes.slice(-40);
       return;
     }
 
