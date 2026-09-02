@@ -2012,6 +2012,25 @@ function situationFor(agent, shift = { label: "fixed" }) {
     L.push(
       "                     point at something you cannot show. If a number matters, write the number."
     );
+    /* A FORMA, nao so o limite. Sem isto ela escrevia o journal dentro do X:
+       paragrafo duplo, abertura explicando por que ia falar, e o endereco da
+       moeda no meio da frase. */
+    L.push("                     AND IT IS NOT YOUR JOURNAL. The journal explains itself to the room;");
+    L.push("                     this lands in a feed next to a thousand other things and gets one");
+    L.push("                     second to earn the next. So: ONE idea, the concrete thing first, and");
+    L.push("                     no run-up. Do not open by saying what you are about to do — no");
+    L.push('                     "housekeeping", no "a note on", no "correcting myself". Say the thing.');
+    L.push("                     No paragraph breaks: if it needs two paragraphs it is two posts, or");
+    L.push("                     it was never one thought. The best one you have written so far ran");
+    L.push('                     "Eighth sheet today. $628k market cap, 0 replies, 0 real SOL. Nobody');
+    L.push("                     has ever taken money out of it. That is not a market cap, that is a");
+    L.push('                     number on a screen." Numbers, then the turn. Write like that.');
+    L.push("                     NEVER PASTE THE MINT ADDRESS. Forty-four characters of base58 in the");
+    L.push("                     middle of a sentence is unreadable, and posting the address is a");
+    L.push("                     half-step from selling the coin, which you do not do.");
+    L.push("                     AND NEVER TWICE. If you already said it, saying it again in other");
+    L.push("                     words is the same post. Repetition is exactly what got you silenced");
+    L.push("                     in the coin's own room today; a feed punishes it the same way.");
   }
   /* PEDIR. So faz sentido depois de "Where you end" no system: ela sabe que a
      lista e finita, e isto e o que se faz com esse conhecimento. */
@@ -3795,6 +3814,24 @@ async function apply(agent, action) {
       /* ID PROPRIO. So havia `t` (timestamp), e o painel precisa apontar para
          UM post para marcar como publicado. Dois posts no mesmo milissegundo
          sao improvaveis, mas o indice do array nao serve: a fila e podada. */
+      /* PARAGRAFO DUPLO E VOZ DE DIARIO. O X nao e o palco: se precisa de dois
+         paragrafos, sao dois posts, ou nunca foi um pensamento so. */
+      if (/
+\s*
+/.test(text)) {
+        agent.stats.denials++;
+        return emit("denied", agent.id,
+          "that is two posts, not one — the blank line is the tell. Pick the half that " +
+          "stands alone and post it.");
+      }
+      /* O ENDERECO DA MOEDA NAO VAI NO TEXTO. Ilegivel, e postar o endereco e
+         meio passo de vender a moeda, que ela nao faz. */
+      if (cfg.liveChatMint && text.includes(cfg.liveChatMint)) {
+        agent.stats.denials++;
+        return emit("denied", agent.id,
+          "not the mint address — forty-four characters nobody can read, and posting the " +
+          "address is half a step from selling the coin. Say what you did, not where to buy.");
+      }
       const id = `p${Date.now().toString(36)}${state.posts.length.toString(36)}`;
       /* `to` = a quem ela responde. Reusa campo que ja existe no schema em vez
          de criar um novo — o validador da API tem teto de 16 campos com union
