@@ -406,6 +406,14 @@ const servidor = http.createServer(async (req, res) => {
     return res.end(fs.readFileSync(arq));
   }
   if (url.pathname === "/api/tela" && req.method === "POST") {
+    /* A UNICA ROTA DE ESCRITA QUE NAO PEDIA TOKEN. O caminho e fixo, entao nao
+       da pra escrever em qualquer lugar — mas sem esta linha qualquer pessoa
+       gravava 1 MB por vez no volume do Railway ate o disco encher, e o
+       checkpoint dela para de salvar quando isso acontece. O corpo tambem ia
+       inteiro pro console.log, que /api/log serve. */
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN)
+      return enviar(res, 401, { erro: "token invalido" });
     let corpo = "";
     req.on("data", (p) => { corpo += p; if (corpo.length > 1e6) req.destroy(); });
     req.on("end", () => {

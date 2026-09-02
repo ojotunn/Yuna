@@ -858,7 +858,11 @@ function emit(kind, agentId, text, extra = {}) {
      que sao meus e ninguem le como fala dela. Quando barra, o evento vira uma
      nota curta e o incidente fica no log: quero saber se ela esta escorregando
      e onde, em vez de descobrir por um print de espectador. */
-  if (["say", "aside", "note"].includes(kind) && typeof text === "string") {
+  /* "toroom" ENTROU AQUI EM 02/09/2026. Era a unica fala dela que saia desta
+     casa para uma plataforma de terceiro, e a unica que ninguem filtrava — o
+     encanamento podia ir junto pro chat da pump sob o nome dela. Nao vazou
+     ainda porque a sala esta engolindo tudo; fechei antes de consertarem. */
+  if (["say", "aside", "note", "toroom"].includes(kind) && typeof text === "string") {
     const r = peneirar(text);
     if (r.barrado) {
       console.log(`[peneira] fala barrada (${r.termos.join(", ")}): ${text.slice(0, 200)}`);
@@ -3022,6 +3026,19 @@ async function apply(agent, action) {
       // Sem isso o agente ouve a plateia e nao tem por onde responder.
       const toRoom = /^(room|chat|audience)$/i.test(String(action.to ?? ""));
       if (toRoom) {
+        /* A PENEIRA ANTES DO ENVIO, NAO DEPOIS. A sala da pump e a UNICA
+           superficie em que uma fala dela sai desta casa para plataforma de
+           terceiro, e era a unica sem filtro: a peneira so roda dentro de
+           emit(), e postToRoom recebe o texto cru da variavel do case. Filtrar
+           no emit deixaria a tela limpa e a pump com o original — pior que
+           nada, porque parece consertado. Mesma correcao que a fila do X ja
+           tinha ganhado; a sala ficou de fora. */
+        const joia = peneirar(text);
+        if (joia.barrado) {
+          agent.stats.denials++;
+          return emit("denied", agent.id,
+            "that one described the plumbing, and the room is the one place your words leave this house. Say the thing itself.");
+        }
         agent.lastSaid = { to: "room", text, tick: state.tick };
         pushDialogue(agent.id, "room", text);
         // O palco mostra SEMPRE. Se o envio estiver desligado ou falhar, o
