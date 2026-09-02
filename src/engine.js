@@ -2414,8 +2414,24 @@ function agentAddress(agentId) {
 const TETO_SALA = num("ROOM_MAX_CHARS", 240);
 
 async function postToRoom(agent, text) {
-  if (!cfg.roomPostEnabled || !cfg.liveChatMint) return;
-  if (agent.roomBlockedUntil && state.tick < agent.roomBlockedUntil) return;
+  /* NENHUM CAMINHO SAI CALADO. Este `return` tambem era mudo: com o envio
+     desligado ela falava no palco e nada no turno dela dizia que a sala nao
+     ouviu. Hoje tres mensagens sumiram por um caminho silencioso e eu levei
+     quatro diagnosticos errados pra achar — porque o codigo nao contava. */
+  if (!cfg.roomPostEnabled || !cfg.liveChatMint) {
+    return emit("note", agent.id,
+      "that stayed on the stage — the room is not wired up right now.");
+  }
+  /* O BLOQUEIO TEM QUE FALAR. Era um `return` mudo: ela dizia no palco, o
+     envio nem era tentado, e nada no turno dela contava isso. Duas mensagens
+     dentro do teto sumiram assim hoje. Silencio depois de uma recusa ensina
+     que a sala e imprevisivel; dizer quantos turnos faltam ensina a esperar. */
+  if (agent.roomBlockedUntil && state.tick < agent.roomBlockedUntil) {
+    const faltam = agent.roomBlockedUntil - state.tick;
+    return emit("note", agent.id,
+      `that did not go to the room — the last one was refused and the room is closed to ` +
+      `you for ${faltam} more turn${faltam > 1 ? "s" : ""}. It stayed on the stage.`);
+  }
 
   const address = agentAddress(agent.id);
   if (!address) {
