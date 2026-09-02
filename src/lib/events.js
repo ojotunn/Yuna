@@ -54,7 +54,8 @@ export function echoes(watch, mcapNow, { thresholdPct = 30, seen = [] } = {}) {
 // A CASA ESTA FICANDO SEM AR — o tesouro real cruzando limiares de sobrevida.
 //
 // Nao e sobre o gasto de cada um (isso saiu da vista deles de proposito, ver
-// postDailyBill): e sobre quanto tempo a CASA ainda paga para os dois pensarem.
+// o gasto por turno, que e da plateia): e sobre quanto tempo o tesouro ainda
+// paga pra ela pensar.
 // Dispara uma vez por limiar cruzado, nunca a cada tick.
 // ----------------------------------------------------------------------------
 export function runwayAlarm(runwayHours, { seen = [], steps = [48, 24, 12, 6] } = {}) {

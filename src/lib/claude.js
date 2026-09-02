@@ -1,5 +1,5 @@
 // ============================================================================
-// Cliente do modelo + contabilidade de custo — o "aluguel" do agente.
+// Cliente do modelo + contabilidade de custo — o que cada turno dela gasta.
 //
 // Cada chamada devolve, junto da decisao, quanto ela custou em dolares reais.
 // Esse numero sai da carteira do agente: existir tem preco, pensar fundo custa
@@ -29,7 +29,7 @@ function getClient() {
 }
 
 // Converte o bloco `usage` da resposta em dolares. Se o modelo nao estiver na
-// tabela, cai no preco do Opus para nao subfaturar o aluguel por engano.
+// tabela, cai no preco do Opus para nao subfaturar o custo por engano.
 export function priceUsage(model, usage) {
   const p = PRICES[model] ?? PRICES["claude-opus-5"];
   const inTok = usage?.input_tokens ?? 0;
@@ -116,7 +116,6 @@ const ACTION_SCHEMA = {
             "research",
             "browse",
             "speak",
-            "work",
             "propose",
             "object",
             "execute",
@@ -131,17 +130,16 @@ const ACTION_SCHEMA = {
             // reason. Valor de enum e de graca; propriedade com union e que
             // conta para o teto de 16 do validador.
             "pay",
-            // Tres fontes de renda novas. Nenhuma acrescenta campo ao schema —
-            // reusam `market`/`text`/`reason`, entao a contagem de union
-            // continua 16/16. So mais valor de enum, que e de graca.
-            "rugcheck",
-            "sell",
-            "bounty",
+            /* AS MESAS DE TRABALHO SAIRAM. (02/09/2026)
+               work, rugcheck, sell e bounty so pagavam abatendo a divida de
+               aluguel, que saiu com o resto da economia do Conatus. Sem case no
+               motor, um valor aqui vira turno queimado — ela escolheria e
+               levaria recusa. */
             // Peticao de emprestimo ao BANCO (humano). Nao acrescenta campo:
             // reusa sizeUsd (valor) + reason (o argumento) + proposalId
             // (co-assinatura do pedido do outro). Enum e de graca.
             "borrow",
-            // METAS de longo prazo (o horizonte alem do aluguel). Reusa `text`
+            // METAS de longo prazo. Reusa `text`
             // (a lista de aspiracoes, uma por linha). Enum e de graca.
             "aspire",
             // PEDIR O QUE NAO EXISTE. Ela sabe que a lista de acoes e finita
@@ -246,7 +244,7 @@ export async function decide({ model, effort, system, situation, maxTokens = 400
   try {
     parsed = JSON.parse(text);
   } catch {
-    // Saida truncada (max_tokens) — trata como turno perdido, mas o aluguel
+    // Saida truncada (max_tokens) — trata como turno perdido, mas o custo
     // ja foi gasto e tem que ser cobrado assim mesmo.
     return {
       journal: "(my answer got cut off before I finished)",

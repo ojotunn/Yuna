@@ -20,3 +20,6 @@ public/assets/
 
 # o bloco de variaveis pro Railway tem as chaves dela dentro
 RAILWAY-VARIAVEIS.txt
+
+# O backup da vida dela (persona, memoria, arquivo inteiro). Nunca no git.
+backups/

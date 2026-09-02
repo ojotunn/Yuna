@@ -155,7 +155,7 @@ export function recent(mint, n = 15) {
 }
 
 // Mensagens ainda nao entregues a este leitor (por agente). Amostrar importa:
-// o chat e mangueira de incendio e cada token lido custa aluguel.
+// o chat e mangueira de incendio e cada token lido custa dinheiro.
 const cursors = new Map(); // `${mint}|${who}` -> ultimo id entregue
 export function fresh(mint, who, max = 8) {
   const room = rooms.get(mint);

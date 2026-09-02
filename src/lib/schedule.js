@@ -8,7 +8,7 @@
 //
 // OS MARCOS PAUTAM, NAO OBRIGAM. O agente continua podendo ignorar, que e o que
 // mantem o show sendo deles e nao roteiro lido. A unica coisa mecanica e o
-// dinheiro, e o dinheiro mora em outro lugar (postDailyBill/collectRent).
+// dinheiro — o custo dela mora no tesouro, em outro lugar.
 //
 // HORARIO: por padrao os marcos DERIVAM da janela ativa, entao mudar o horario
 // do show move a pauta junto, sozinho. Cravar na mao tambem funciona:

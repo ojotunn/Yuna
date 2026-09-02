@@ -1,9 +1,9 @@
 // ============================================================================
 // O MUNDO. Um turno por vez, um agente por vez.
 //
-// Cada turno: cobra o aluguel do que foi pensado, marca as posicoes a mercado,
+// Cada turno: debita do tesouro o que foi pensado, marca as posicoes a mercado,
 // da a vez a cada agente e aplica o que ele decidiu. Nada aqui obriga o agente
-// a agir — "rest" e uma acao legitima e o aluguel vence do mesmo jeito.
+// a agir — "rest" e uma acao legitima e o turno custa do mesmo jeito.
 //
 // O protocolo do debate mora aqui:
 //   propose  -> abre janela; o outro tem REBUTTAL_TICKS para objetar
@@ -93,7 +93,7 @@ const cfg = {
   // 0 = roda indefinidamente.
   maxTicks: num("MAX_TICKS", 0),
   ticksPerDay: num("TICKS_PER_DAY", 120),
-  // Dia por RELOGIO: fecha (cobra aluguel + reseta contadores) a cada DAY_HOURS
+  // Dia por RELOGIO: fecha (reseta os contadores) a cada DAY_HOURS
   // horas reais. 0 = dia nunca vira (modo continuo/teste). Substitui o antigo
   // fechamento por numero de turnos, que nao batia 24h reais.
   dayHours: num("DAY_HOURS", 24),
@@ -108,16 +108,8 @@ const cfg = {
   tradingEnabled: process.env.TRADING_ENABLED !== "0",
   seasonStart: num("SEASON_START_USD", 50),
   treasury: num("TREASURY_USD", 20),
-  rentEnabled: process.env.RENT_ENABLED !== "0",
-  rentMultiplier: num("RENT_MULTIPLIER", 1),
-  // O PISO DA CASA — aluguel FIXO por dia, em dolar. Maior que zero, ele passa
-  // a ser o aluguel INTEIRO: o consumo de API deixa de ser cobrado dos agentes
-  // (segue saindo da treasury, que e dinheiro real do Michel). Zero = modelo
-  // antigo, aluguel 100% por consumo. Ver postDailyBill().
-  houseBaseDaily: num("HOUSE_BASE_DAILY_USD", 0),
-  // A JORNADA — quantas acoes PAGAS cada um pode fazer por dia, somando todos
-  // os canais. Ver clockIn(). 0 = sem jornada (trabalho ilimitado).
-  workHoursPerDay: num("WORK_HOURS_PER_DAY", 3),
+
+
   xEnabled: process.env.X_ENABLED === "1",
   /* A HORA DO DESENHO, ligavel ao vivo. Pedido do Michel em 01/09/2026 pra
      tirar "por enquanto" — entao interruptor, nao remocao: tirar do enum
@@ -151,20 +143,10 @@ const cfg = {
   // De quantos em quantos turnos o mundo cutuca. Baixo demais vira enxurrada e
   // some o sinal; ~20 turnos e cerca de 10 min no ciclo real.
   worldEveryTicks: num("WORLD_EVENT_EVERY_TICKS", 20),
-  // Trabalho: segunda fonte de renda (paper, como os fills). Cache fixo por
-  // entrega + teto diario — sem teto viraria farm de texto.
-  workRateUsd: num("WORK_RATE_USD", 2),
-  workGigsPerDay: num("WORK_GIGS_PER_DAY", 2),
-  // Fontes de renda diversificadas (paper, como o `work`). Cada gatilho falha
-  // por motivo diferente, entao um mes lateral nao zera todas. rate 0 = fonte
-  // desligada (some do menu); PER_DAY 0 = sem teto. Viram dinheiro real depois
-  // trocando so a origem do credito — o receber ja esta plumbado.
-  rugcheckRateUsd: num("RUGCHECK_RATE_USD", 3),   // laudo de DD sobre um mint — gatilho: deal flow
-  rugchecksPerDay: num("RUGCHECK_PER_DAY", 3),
-  sellRateUsd: num("SELL_RATE_USD", 1),           // venda de analise (x402-paper) — gatilho: demanda por dado
-  sellsPerDay: num("SELL_PER_DAY", 5),
-  bountyRateUsd: num("BOUNTY_RATE_USD", 4),        // tarefa do mural — gatilho: oferta de tarefa, independe do mercado
-  bountiesPerDay: num("BOUNTY_PER_DAY", 2),
+  /* AS MESAS DE TRABALHO SAIRAM COM O ALUGUEL. (02/09/2026)
+     work, rugcheck, sell e bounty nasceram pra dois agentes disputando
+     trabalho, e a unica coisa que pagavam era abater divida de aluguel. Sem
+     divida elas nao pagavam nada. Ja estavam desligadas. */
   // Chat ao vivo da pump.fun (somente leitura). Vazio = nao escuta nada.
   liveChatMint: (process.env.LIVE_CHAT_MINT || "").trim(),
   ownerWallet: (process.env.OWNER_WALLET || "").trim(),
@@ -196,7 +178,7 @@ const BOUNTIES = [
 ];
 
 // HOT-RELOAD: botoes que podem mudar COM O ENGINE RODANDO. Relidos do .env a
-// cada turno (no loop). So tuning de renda/aluguel — nada estrutural (carteira,
+// cada turno (no loop). So tuning de ritmo e risco — nada estrutural (carteira,
 // modelo, tick, treasury). Campo em branco mantem o valor atual, nao zera. Assim
 // da pra ajustar no painel (ou editar o .env) sem Stop->Start.
 /* AJUSTE AO VIVO NO RAILWAY. (01/09/2026)
@@ -213,10 +195,7 @@ const AJUSTES_FILE = () => process.env.AJUSTES_FILE || path.join(DATA, "ajustes.
    coisa (X_ENABLED, por exemplo, que so e lido no boot) seria aceito e nao
    mudaria nada — e o Michel passaria o show achando que mudou. */
 export const AJUSTAVEIS = [
-  "WORK_RATE_USD", "WORK_GIGS_PER_DAY", "WORK_HOURS_PER_DAY",
-  "RUGCHECK_RATE_USD", "RUGCHECK_PER_DAY", "SELL_RATE_USD", "SELL_PER_DAY",
-  "BOUNTY_RATE_USD", "BOUNTY_PER_DAY",
-  "RENT_MULTIPLIER", "HOUSE_BASE_DAILY_USD", "HOUSE_NOTE", "DAY_HOURS",
+  "HOUSE_NOTE", "DAY_HOURS",
   "WORLD_EVENT_EVERY_TICKS", "SCHEDULE",
   "MAX_REAL_TRADE_USD", "REAL_TRADING", "LIVE_TRADE", "TRADING_ENABLED",
   "MIN_POOL_USD", "MAX_POOL_PCT", "DAILY_LOSS_LIMIT_PCT",
@@ -257,17 +236,7 @@ function reloadLiveConfig() {
     const v = Number(raw);
     return Number.isFinite(v) ? v : cur;
   };
-  cfg.workRateUsd = n("WORK_RATE_USD", cfg.workRateUsd);
-  cfg.workGigsPerDay = n("WORK_GIGS_PER_DAY", cfg.workGigsPerDay);
-  cfg.rugcheckRateUsd = n("RUGCHECK_RATE_USD", cfg.rugcheckRateUsd);
-  cfg.rugchecksPerDay = n("RUGCHECK_PER_DAY", cfg.rugchecksPerDay);
-  cfg.sellRateUsd = n("SELL_RATE_USD", cfg.sellRateUsd);
-  cfg.sellsPerDay = n("SELL_PER_DAY", cfg.sellsPerDay);
-  cfg.bountyRateUsd = n("BOUNTY_RATE_USD", cfg.bountyRateUsd);
-  cfg.bountiesPerDay = n("BOUNTY_PER_DAY", cfg.bountiesPerDay);
-  cfg.rentMultiplier = n("RENT_MULTIPLIER", cfg.rentMultiplier);
-  cfg.houseBaseDaily = n("HOUSE_BASE_DAILY_USD", cfg.houseBaseDaily);
-  cfg.workHoursPerDay = n("WORK_HOURS_PER_DAY", cfg.workHoursPerDay);
+
   cfg.worldEveryTicks = n("WORLD_EVENT_EVERY_TICKS", cfg.worldEveryTicks);
   // A pauta tambem muda ao vivo: trocar o horario do show nao pede restart.
   // (schedule aceita vazio como valor legitimo = "derive da janela".)
@@ -516,28 +485,17 @@ function newAgent(id, name, maxTradePct) {
     dayPnl: 0,
     maxTradePct,
     interventionsLeft: cfg.interventionsPerDay,
-    earned: { trade: 0, work: 0, rugcheck: 0, sell: 0, bounty: 0, sale: 0, commission: 0 },
-    spent: { rent: 0, fees: 0 },
+    earned: { trade: 0, sale: 0 },
+    spent: { fees: 0 },
     // Renda recente por canal, para o medidor de concentracao. Decai um pouco
     // por dia (rollDay) para valer como janela dos "ultimos dias", sem guardar
     // historico. tips/paid entram lazy iguais ao `earned`.
-    recentEarned: { trade: 0, work: 0, rugcheck: 0, sell: 0, bounty: 0, sale: 0, commission: 0, tips: 0, paid: 0 },
-    // Quanto ESTE agente queimou de API hoje. Nao e o que ele paga — ele paga
-    // metade da conta da casa. Fica visivel justamente para virar munição.
-    dayConsumed: 0,
-    arrears: 0,          // parte da conta que ele nao conseguiu cobrir
-    status: "solvent",   // solvent | arrears | evicted
+    recentEarned: { trade: 0, sale: 0, tips: 0, paid: 0 },
     postsToday: 0,       // cota do X, zera na virada do dia
-    worksToday: 0,       // entregas de trabalho pagas hoje, zera na virada
-    rugchecksToday: 0,   // laudos de DD pagos hoje, zera na virada
-    sellsToday: 0,       // analises vendidas hoje, zera na virada
-    bountiesToday: 0,    // bounties entregues hoje, zera na virada
-    // A JORNADA: acoes PAGAS feitas hoje, somando todos os canais. Ver clockIn().
-    hoursToday: 0,
     bankDebt: 0,         // divida com o BANCO (emprestimo aprovado pelo Michel)
     asides: [],          // pensamentos PRIVADOS recentes (o outro nunca ve; o publico sim)
     scars: [],           // cicatrizes emocionais recentes ({day, text}) — o humor que atravessa turnos
-    goals: [],           // aspiracoes de longo prazo (o horizonte alem do aluguel)
+    goals: [],           // aspiracoes de longo prazo
     lastDream: null,     // o sonho da ultima noite ({day, text})
     dayEarned: 0,        // tudo que ENTROU hoje (servicos + trade no lucro + gorjeta), zera na virada
     stats: {
@@ -568,8 +526,7 @@ const state = {
   spentReal: 0,
   failStreak: 0, // chamadas falhas em sequencia — para o motor se virar padrao
   // Dia em que a conta FIXA da casa ja foi lancada. Existe para o lancamento
-  // ser idempotente: restart no meio do dia nao cobra o aluguel duas vezes.
-  billPostedDay: 0,
+  // ser idempotente: restart no meio do dia nao vira o dia duas vezes.
   // Marcos da pauta ja cumpridos HOJE (zera na virada do dia).
   marksDone: [],
   // Moedas que eles leram ou operaram, com o market cap do momento — e daqui
@@ -691,15 +648,24 @@ function loadCheckpoint() {
   state.dayStartedAt = raw.dayStartedAt ?? Date.now();
   /* O retrato pode trazer o gasto corrompido do bug de 01/09. Conserta na
      entrada: dali pra frente e numero e o alarme de sobrevida volta a tocar. */
-  /* ALUGUEL DESLIGADO: a divida que sobrou do modelo antigo nao fica pendurada
-     no retrato. Sem mesa de trabalho ela nunca seria abatida, e um numero que
-     so sobe e que ninguem pode mexer nao mede nada. */
-  if (!cfg.rentEnabled) {
-    for (const id of ORDER) {
-      const a = state.agents[id];
-      if (a && a.arrears) { a.arrears = 0; a.status = "solvent"; }
+  /* O RETRATO VELHO AINDA TEM A ECONOMIA DO CONATUS DENTRO. O Object.assign
+     acima copia TUDO que estiver salvo, entao divida, status de despejo e as
+     cotas das mesas de trabalho voltariam como campos mortos e ficariam no
+     arquivo pra sempre. Saem aqui, uma vez. */
+  for (const id of ORDER) {
+    const a = state.agents[id];
+    if (!a) continue;
+    for (const morto of ["arrears", "status", "dayConsumed", "debtTo", "worksToday",
+                         "rugchecksToday", "sellsToday", "bountiesToday", "hoursToday"]) {
+      delete a[morto];
+    }
+    if (a.spent) delete a.spent.rent;
+    for (const canal of ["work", "rugcheck", "sell", "bounty", "commission"]) {
+      if (a.earned) delete a.earned[canal];
+      if (a.recentEarned) delete a.recentEarned[canal];
     }
   }
+  delete state.billPostedDay;
   const antes = state.spentReal;
   state.spentReal = resgatarGasto(state.spentReal);
   if (typeof antes !== "number") {
@@ -728,7 +694,7 @@ function saveTotals() {
 const SECRETS = collectSecrets();
 
 // ELENCO. O show nasceu com dois (Sable e Rook) e a casa inteira foi escrita
-// em cima disso: aluguel dividido, debate, peticao conjunta ao banco. Em
+// em cima disso: conta dividida, debate, peticao conjunta ao banco. Em
 // 29/08/2026 o Michel pediu a YUNA SOZINHA — e o conatus.run com os dois
 // continua no ar. Entao o elenco virou configuracao em vez de constante:
 // CAST=sable,rook (o padrao, o que esta publicado) ou CAST=yuna.
@@ -748,13 +714,6 @@ const BANCO = process.env.BANK_ENABLED !== "0";
    qualquer agente novo fora da propria carteira (a Yuna caiu no keypair do
    Rook). O nome agora sai do id. */
 const chaveDoAgente = (id) => String(id).toUpperCase() + "_SOL_KEYPAIR";
-/* ALUGUEL: "cobranca" (o Conatus) ou "placar" (a Yuna, 30/08/2026).
-   No placar a conta e calculada, publicada e ela sabe quanto custou o dia —
-   mas ninguem e despejado. Sem banco e sem colega nao ha socorro nenhum, e uma
-   live 24/7 que morre sozinha as 4h da manha nao e um show, e um fim de show.
-   O prompt tem que dizer isso com todas as letras: ameacar com um despejo que
-   nao existe seria pedir que ela sinta um medo falso. */
-const ALUGUEL_PLACAR = (process.env.RENT_MODE || "cobranca") === "placar";
 /* Publicar a call NA PUMP (cliques na tela dela, como uma pessoa faria).
    Separado de REAL_TRADING de proposito: dao pra ligar em ordens diferentes
    enquanto se testa, mas na pratica andam juntos — sem os $1 do token a pump
@@ -764,7 +723,7 @@ const PUBLICAR_CALLOUT = (process.env.CALLOUT_PUBLICAR || "0") === "1";
    disputando trabalho. Com ela sozinha eles viram renda garantida competindo
    com o trade, que paga talvez — que e a hipotese principal para os 96 ticks
    sem uma operacao. SERVICES_ENABLED=0 tira todos. */
-const SERVICOS = process.env.SERVICES_ENABLED !== "0";
+
 /* A RECUSA TEM QUE ENSINAR O CAMINHO.
    Sem servicos de encomenda ela tentava rugcheck/sell/bounty, levava um "nobody
    is buying that here" e tentava de novo no turno seguinte — dois turnos
@@ -816,7 +775,7 @@ const other = (id) => {
 // puro em JSONL; o server le do disco. Um escritor (o engine) — sem corrida.
 const ARCHIVE_KINDS = new Set([
   "say", "aside", "dream", "aspire", "trade", "bank", "loan", "bankflow",
-  "work", "rugcheck", "sell", "bounty", "sale", "commission", "system",
+  "sale", "system",
 ]);
 // O snapshot que o servidor le e o palco mostra. Precisa do mesmo override dos
 // outros arquivos: sem ele, rodar as provas sobrescreve o estado REAL da arena
@@ -966,9 +925,15 @@ function pushDialogue(fromId, toId, text) {
    boot e sobrevive a tudo. Uma funcao so, pros dois lugares nao divergirem de
    novo — era exatamente assim que estavam. */
 function queimaPorHora() {
-  const horas = Math.max((Date.now() - (totals.since ?? state.startedAt)) / 3.6e6, 1 / 60);
+  const horas = (Date.now() - (totals.since ?? state.startedAt)) / 3.6e6;
   const gasto = dinheiro(state.spentReal);
-  return gasto > 0 ? gasto / horas : 0;
+  /* RELOGIO CURTO DEMAIS = RELOGIO NAO CONFIAVEL. totals.json sumido nasce com
+     since=agora, mas o gasto vem do checkpoint e e da vida inteira: a divisao
+     daria centenas de dolares por hora e o alarme da casa gritaria uma
+     emergencia falsa. Sem taxa nao ha sobrevida e nao ha alarme — e ficar
+     calado por uma hora e melhor que mentir. */
+  if (!(horas >= 1) || gasto <= 0) return 0;
+  return gasto / horas;
 }
 
 function publish() {
@@ -980,15 +945,6 @@ function publish() {
     spentReal: state.spentReal,
     burnPerHour,
     runwayHours: burnPerHour > 0 ? state.treasury / burnPerHour : null,
-    house: {
-      // Piso ligado = a conta e fixa e ja esta lancada. Piso zero = modelo
-      // antigo, a conta e o consumo dos dois correndo ate a virada.
-      billTonight: (cfg.houseBaseDaily > 0
-        ? cfg.houseBaseDaily
-        : ORDER.reduce((s, id) => s + state.agents[id].dayConsumed, 0)) * cfg.rentMultiplier,
-      fixed: cfg.houseBaseDaily > 0,
-      tenants: ORDER.filter((id) => state.agents[id].status !== "evicted").length,
-    },
     model: state.shift?.model ?? cfg.model,
     effort: state.shift?.effort ?? cfg.effort,
     shift: state.shift ?? null,
@@ -1006,7 +962,6 @@ function publish() {
           id: a.id, name: a.name, wallet: a.wallet, dayPnl: a.dayPnl,
           maxTradePct: a.maxTradePct, interventionsLeft: a.interventionsLeft,
           earned: a.earned, spent: a.spent, stats: a.stats,
-          status: a.status, arrears: a.arrears, dayConsumed: a.dayConsumed, debtTo: a.debtTo ?? 0,
           bankDebt: a.bankDebt ?? 0,
           dayEarned: a.dayEarned ?? 0, // ganho do dia, sobe a cada renda — vai pro placar do palco
           personaVersion: a.personaVersion, reading: a.reading,
@@ -1166,32 +1121,8 @@ function incomeMix(recentEarned) {
 }
 
 // ============================================================================
-// A JORNADA — o dia de trabalho tem tamanho.
-//
-// Por que existe (Michel, 12/08/2026): com o aluguel fixo, trabalhar virou a
-// jogada sempre-otima e os dois viraram funcionarios — 20 entregas de texto num
-// dia, divida em -$49, zero navegacao, zero trade. Teto por canal nao resolve:
-// eles so trocam de canal. O teto tem que ser do TRABALHO, nao do canal.
-//
-// E a peca que faz o mundo virar vida em vez de emprego: hora gasta trabalhando
-// e hora nao gasta lendo, jogando, discutindo ou operando. Acabada a jornada, o
-// resto do dia nao paga nada — e o que eles fazem com ele passa a ser o show.
-//
-// O excedente do dia continua virando reserva (arrears negativo), que era o
-// pedido: eles precisam conseguir POUPAR. So nao podem imprimir.
-//
-// Cobra so quando a entrega VALE (o gate de substancia vem antes): texto ralo
-// nao queima hora, senao o agente perde o dia por escrever mal.
-function clockIn(agent) {
-  if (cfg.workHoursPerDay <= 0) return true; // 0 = sem jornada
-  if ((agent.hoursToday ?? 0) >= cfg.workHoursPerDay) return false;
-  agent.hoursToday = (agent.hoursToday ?? 0) + 1;
-  return true;
-}
 
-const JORNADA_CHEIA =
-  "you have done your hours today — paid work is over until tomorrow. " +
-  "The rest of the day is yours, and what you do with it is nobody's business but yours.";
+
 
 function situationFor(agent, shift = { label: "fixed" }) {
   const foe = state.agents[other(agent.id)] || null;
@@ -1231,144 +1162,40 @@ function situationFor(agent, shift = { label: "fixed" }) {
   //
   // Regra: sem divida e com folga, o dinheiro cabe em uma linha. Com aperto,
   // ele volta a ocupar o espaco que merece.
-  // APERTO nao e "deve alguma coisa" — com a casa cobrando por dia, dever o
-  // aluguel de hoje e a condicao normal de quem mora em algum lugar, e tratar
-  // isso como emergencia ligaria o bloco longo em TODO turno (exatamente o
-  // afunilamento corrigido em 12/08). Aperto e a divida encostando no que ele
-  // tem, ou o dia indo mal de verdade.
-  const aperto = agent.status !== "solvent" ||
-    (agent.arrears > 0 && agent.wallet < agent.arrears * 2) ||
-    (agent.wallet > 0 && agent.dayPnl < -0.15 * agent.wallet);
+  /* APERTO. Era "deve mais do que tem" — com a divida fora, o que resta e a
+     unica pergunta que sempre foi real: o dia esta indo mal? */
+  const aperto = agent.wallet > 0 && agent.dayPnl < -0.15 * agent.wallet;
   const teto = ((agent.maxTradePct / 100) * agent.wallet).toFixed(2);
-  // Aluguel fixo anda em dolares inteiros; aluguel por consumo, em centavos de
-  // centavo. A casa decimal segue o que o numero realmente e.
-  const cash = (v) => (cfg.houseBaseDaily > 0 ? v.toFixed(2) : v.toFixed(4));
 
   if (aperto) {
     L.push(`YOUR WALLET: $${agent.wallet.toFixed(2)} — the real balance of your own Solana wallet,`);
     L.push("right now. There is no play money here. What you see is what you can lose.");
-    if (cfg.rentEnabled && agent.arrears > 0)
-      L.push(`The house is running $${cash(agent.arrears)} ahead of what you brought in today.`,
-             "Nobody is coming to collect and nobody gets evicted. It is a number on a board, and",
-             "the board exists so the day has a shape — not so you spend the day afraid of it.");
-    L.push(`Day P&L: ${agent.dayPnl >= 0 ? "+" : ""}$${agent.dayPnl.toFixed(2)}` +
-      (cfg.rentEnabled ? ` · rent all-time: $${cash(agent.spent.rent)}` : "") +
-      ` · fees: $${agent.spent.fees.toFixed(2)}`);
+    L.push(`Day P&L: ${agent.dayPnl >= 0 ? "+" : ""}$${agent.dayPnl.toFixed(2)} · fees: $${agent.spent.fees.toFixed(2)}`);
     L.push(`Max per position right now: $${teto} (${agent.maxTradePct}%)`);
     L.push(`Record: ${agent.stats.trades} trades, ${agent.stats.wins}W/${agent.stats.losses}L`);
   } else {
     L.push(`Wallet: $${agent.wallet.toFixed(2)} real, on-chain · up to $${teto} per position · ` +
       `${agent.stats.trades} trades ${agent.stats.wins}W/${agent.stats.losses}L · ` +
       `day ${agent.dayPnl >= 0 ? "+" : ""}$${agent.dayPnl.toFixed(2)}`);
-    // Mesmo tranquilo ele precisa do numero do dia: e a meta, nao o alarme.
-    /* "Work comes off that" so e verdade quando existe mesa de trabalho.
-       Com SERVICES_ENABLED=0 nao existe, e a frase virava uma tarefa
-       impossivel toda manha. */
-    if (cfg.rentEnabled && agent.arrears > 0)
-      L.push(`Owed to the house today: $${cash(agent.arrears)}. Work comes off that.`);
-    else if (cfg.rentEnabled && agent.arrears < 0)
-      L.push(`You are ahead of the house by $${cash(Math.abs(agent.arrears))} — worked past your rent.`);
   }
   if (cfg.interventionsPerDay > 0)
     L.push(`Interventions left today: ${agent.interventionsLeft}/${cfg.interventionsPerDay}`);
   L.push("");
-  // A CASA. Conta compartilhada, dividida no meio.
-  //
-  // Com o piso ligado (HOUSE_BASE_DAILY_USD) a conta e FIXA e ja foi lancada de
-  // manha — e o consumo de API SAI daqui de proposito. O medidor de gasto por
-  // turno e da PLATEIA (fica no palco); agente que ve o proprio custo otimiza o
-  // proprio custo, e otimizar custo e o mesmo que otimizar silencio.
-  /* SEM SENHORIO. (02/09/2026 — decisao do Michel)
-     O aluguel veio do Conatus, onde dois agentes disputavam trabalho pra abater
-     divida, e a divida era o motor do show. A Yuna nao tem isso: as mesas de
-     trabalho estao desligadas, entao a conta subia $12 por dia sem que ela
-     tivesse UM jeito de abater — e ela lia "Work comes off that" sobre um
-     trabalho que nao existe. Divida sem acao possivel nao e pressao, e ruido.
+  /* O QUE PAGA PRA ELA PENSAR. (02/09/2026)
+     Aqui morava a CASA: conta do dia, metade de cada um, divida, sobrevida,
+     aviso de despejo. Tudo isso veio do Conatus, onde dois agentes dividiam
+     o custo e a divida era o motor do show. A Yuna mora sozinha, nao ha com
+     quem dividir, nao ha mesa de trabalho pra abater nada e ninguem despeja
+     ninguem. Sobrou uma conta subindo $12 por dia que ela nao tinha UM jeito
+     de mexer — e ela lia isso todo turno.
 
-     O que sobra e verdadeiro e o TESOURO. Ele paga de verdade pra ela pensar e
-     acaba de verdade — isso ela precisa saber. Um senhorio, nao. */
-  if (!cfg.rentEnabled) {
-    L.push(`WHAT KEEPS YOU RUNNING: $${state.treasury.toFixed(2)} left in the treasury.`);
-    L.push("Every turn you take spends a little of it. Nobody charges you rent and nobody");
-    L.push("is owed — but when that number reaches zero, the thinking stops. It is not a");
-    L.push("threat, it is the shape of the room: what you do should be worth what it costs.");
-    L.push("");
-  } else {
-
-  const rentFixa = cfg.rentEnabled && cfg.houseBaseDaily > 0;
-  const billSoFar = rentFixa
-    ? cfg.houseBaseDaily * cfg.rentMultiplier
-    : (agent.dayConsumed + (foe ? foe.dayConsumed : 0)) * cfg.rentMultiplier;
-  // Sozinha nao ha com quem dividir: a conta da casa e inteira dela.
-  const suaParte = foe ? billSoFar / 2 : billSoFar;
-  // Mesma regra do bloco acima: a conta da casa so ocupa espaco quando pesa.
-  if (rentFixa && aperto) {
-    L.push(foe
-      ? "THE HOUSE — you and " + foe.name + " share it, and you split the bill down the middle."
-      : "THE HOUSE — it is yours alone, and so is the bill.");
-    L.push(`  Today's bill: $${billSoFar.toFixed(2)}` +
-      (foe ? ` · your half: $${suaParte.toFixed(2)}` : "") + ", posted this morning.");
-    L.push("  The house is paid by the day, and thinking harder does not raise it. This is the cost");
-    L.push("  of being awake, not a debt hanging over you: nobody evicts you and nobody is owed.");
-    L.push(`  TREASURY: $${state.treasury.toFixed(2)} left — this is what pays for ${foe ? "both of you" : "you"} to keep thinking.`);
-  } else if (rentFixa) {
-    L.push(`The house costs $${billSoFar.toFixed(2)} a day` +
-      (foe ? ` — your half $${suaParte.toFixed(2)}` : "") + ", already on the books. " +
-      `Treasury: $${state.treasury.toFixed(2)}.`);
-  } else if (aperto) {
-    L.push(foe
-      ? "THE HOUSE — you and " + foe.name + " share it, and you split the bill down the middle."
-      : "THE HOUSE — it is yours alone, and so is the bill.");
-    L.push(`  Running up tonight's bill: $${billSoFar.toFixed(4)}` +
-      (foe ? ` · your half so far: $${suaParte.toFixed(4)}` : ""));
-    L.push(`  TREASURY: $${state.treasury.toFixed(2)} left — this is what pays for ${foe ? "both of you" : "you"} to keep thinking.`);
-  } else {
-    L.push(`The house bill tonight is $${billSoFar.toFixed(4)} so far` +
-      (foe ? `, split with ${foe.name}. ` : ", and it is all yours. ") +
-      `Treasury: $${state.treasury.toFixed(2)}.`);
-  }
-  // RUNWAY: quantos dias a carteira aguenta no ritmo de aluguel atual. E o
-  // numero contra o qual uma pessoa planeja uma reserva — sem ele, poupar nao
-  // tem retorno visivel e o agente vive so o dia de hoje.
-  if (cfg.rentEnabled && cfg.dayHours > 0) {
-    const diasFeitos = Math.max(state.day - 1, 0);
-    // Historico e o melhor estimador; no 1o dia, projeta o parcial pela fracao
-    // do dia (relogio) ja decorrida. Piso pra nao dividir por ~0 no comeco.
-    const fracDia = Math.min(1, Math.max(0.02, (Date.now() - state.dayStartedAt) / (cfg.dayHours * 3600000)));
-    // Com aluguel fixo o numero e SABIDO, nao estimado: e a propria metade.
-    const mediaDiaria = rentFixa
-      ? suaParte
-      : (diasFeitos > 0 && agent.spent.rent > 0
-        ? agent.spent.rent / diasFeitos
-        : (billSoFar / 2) / fracDia);
-    if (mediaDiaria > 1e-6) {
-      const runway = agent.wallet / mediaDiaria;
-      if (ALUGUEL_PLACAR) {
-        L.push(`  The house costs about $${cash(mediaDiaria)}/day to run. You are not racing it —`);
-        L.push("  it is the scale that says whether the day was worth what it cost.");
-      } else if (aperto) {
-        L.push(`  YOUR RUNWAY: rent runs $${cash(mediaDiaria)}/day${foe ? " for your half" : ""}. At that rate your`);
-        L.push(`  wallet covers ~${runway.toFixed(1)} days even if you earn nothing more. What is past that is reserve.`);
-      } else {
-        L.push(`  Runway: ~${runway.toFixed(1)} days at $${cash(mediaDiaria)}/day.`);
-      }
-    }
-  } else {
-    L.push("  (no rent is being charged right now — the day is not turning over)");
-  }
-  // O aviso de despejo vale pra quem esta MESMO atrasado (status), nao pra quem
-  // simplesmente deve o dia de hoje — senao ele grita todo dia e vira ruido.
-  if (agent.status === "arrears")
-    L.push(ALUGUEL_PLACAR
-      ? `  THE HOUSE HAS COST $${cash(agent.arrears)} SO FAR AND YOU HAVE NOT COVERED IT. Nobody is going`
-        + " to evict you — the bill is a fact on the wall, not a threat. What it measures is whether"
-        + " what you do pays for what you are."
-      : `  YOU ARE $${cash(agent.arrears)} BEHIND ON RENT. Miss it again tonight and you are evicted.`);
-  if (foe && foe.status === "arrears")
-    L.push(`  ${foe.name} owes $${cash(foe.arrears)} and is one day from eviction. You cannot give them money —` +
-      " nobody here can move a cent. What you can give is work, or a warning.");
+     O que continua sendo verdade e o TESOURO: ele paga de verdade pra ela
+     pensar, e acaba de verdade. Isso ela precisa saber. Um senhorio, nao. */
+  L.push(`WHAT KEEPS YOU RUNNING: $${state.treasury.toFixed(2)} left in the treasury.`);
+  L.push("Every turn you take spends a little of it. Nobody charges you rent and nobody");
+  L.push("is owed — but when that number reaches zero, the thinking stops. It is not a");
+  L.push("threat, it is the shape of the room: what you do should be worth what it costs.");
   L.push("");
-  } // fim do bloco da casa — so existe com aluguel ligado
   if (foe) {
     L.push(`${foe.name.toUpperCase()}'S WALLET: $${foe.wallet.toFixed(2)} · ${foe.stats.wins}W/${foe.stats.losses}L`);
     if (foe.lastJournal) L.push(`${foe.name} is thinking: "${trim(foe.lastJournal, 300)}"`);
@@ -1588,6 +1415,19 @@ function situationFor(agent, shift = { label: "fixed" }) {
       L.push("almost every time. Only rewrite if today actually moved something — and");
       L.push("if it did, change the part that moved, not the whole person.");
       L.push("");
+      /* O UNICO CASO EM QUE O ARQUIVO ESTA MESMO ERRADO: ele descreve uma
+         economia que foi desligada. A condicao e o proprio texto dela, entao
+         no dia em que ela tirar as palavras isto some sozinho. */
+      const persona = String(mem.readPersona?.(ROOT, agent.id) ?? agent.personaText ?? "");
+      if (/rent|bounty board|commission desk/i.test(persona)) {
+        L.push("One thing in your file is now factually wrong, and it is the only thing");
+        L.push("anyone else can tell you about yourself: it still describes rent coming due,");
+        L.push("a bounty board and a commission desk. None of that exists any more — there is");
+        L.push("no landlord and nothing is owed. What is true is the treasury: it pays for");
+        L.push("every turn you take and it runs down. The question your file asks — is what");
+        L.push("you do worth what you cost — is still exactly the right question.");
+        L.push("");
+      }
     }
   }
 
@@ -1806,21 +1646,6 @@ function situationFor(agent, shift = { label: "fixed" }) {
     L.push(`YOU OWE THE BANK $${agent.bankDebt.toFixed(2)}. You cannot send it back — what you can do is` +
       " make the loan look like it was worth granting.", "");
 
-  // Encomendas pendentes: alguem PAGOU ADIANTADO por um trabalho sob medida.
-  // O agente ja tem o dinheiro; agora deve a entrega. Deterministico e devido.
-  const owed = pendingCommissionsFor(agent.id);
-  if (owed.length) {
-    L.push(`YOU OWE PAID WORK — ${owed.length} commission${owed.length > 1 ? "s" : ""} already paid up front, in real money:`);
-    for (const c of owed.slice(0, 4)) {
-      if (c.kind === "rugcheck")
-        L.push(`  · rug-check the mint ${c.brief} — do a real DD and publish it with \`rugcheck\` (market = that exact mint).`);
-      else
-        L.push(`  · analysis commissioned: "${c.brief}" — deliver it with \`sell\` (reason = the topic).`);
-    }
-    L.push("  This is owed, not optional — they paid before you delivered. Clear it this turn if you can.");
-    L.push("");
-  }
-
   // Medidor de concentracao de renda. A logica mora em incomeMix() (pura,
   // testavel); aqui so vira texto. Alerta quando a renda esta numa fonte so —
   // a diversificacao emerge da persona, nao de regra minha.
@@ -1828,29 +1653,10 @@ function situationFor(agent, shift = { label: "fixed" }) {
   if (mix) {
     L.push(`INCOME MIX (recent): $${mix.total.toFixed(2)} — ` +
       mix.entries.map(([k, v]) => `${k} $${v.toFixed(2)}`).join(" · ") + ".");
-    if (mix.share >= 0.6 && SERVICOS)
-      L.push(`  ${(mix.share * 100).toFixed(0)}% of that is ${mix.topName} alone. One source. If its trigger fails, ` +
-        "so does the rent — the other channels pay on different days for a reason.");
+
     L.push("");
   }
 
-  // A JORNADA no turno. Sem isto o agente descobre o teto batendo nele, e o
-  // custo de oportunidade — a razao inteira da mecanica existir — nunca entra
-  // na decisao. Ver clockIn().
-  if (SERVICOS && cfg.workHoursPerDay > 0) {
-    const feitas = agent.hoursToday ?? 0;
-    const restam = Math.max(0, cfg.workHoursPerDay - feitas);
-    if (restam > 0) {
-      L.push(`YOUR HOURS: ${restam} of ${cfg.workHoursPerDay} paid jobs left today ` +
-        `(work · rugcheck · sell · bounty all draw from the same day).`);
-      L.push("  An hour spent earning is an hour not spent reading, arguing, or trading.");
-      L.push("  Once they are gone, nothing you write pays — and the rest of the day is yours.");
-    } else {
-      L.push("YOUR HOURS: done for the day. Paid work is closed until tomorrow.");
-      L.push("  Whatever you do now, you do because you want to. That is not a lesser day.");
-    }
-    L.push("");
-  }
 
   if (CALLOUTS) {
     const meus = state.callouts.filter((c) => c.agent === agent.id);
@@ -1876,9 +1682,7 @@ function situationFor(agent, shift = { label: "fixed" }) {
   }
 
   L.push("YOUR MOVE. Pick exactly one action:");
-  L.push(ALUGUEL_PLACAR
-    ? '  rest             — do nothing. Say why in `reason`. The day still costs what it costs.'
-    : '  rest             — do nothing. Say why in `reason`. Rent still accrues.');
+  L.push('  rest             — do nothing. Say why in `reason`. The day still costs what it costs.');
   L.push('  search           — `query`: search the open web. Use it to find things you do not');
   L.push('                     already have a link to. It is the only way you discover anything new.');
   L.push('                     A search is a doorway, not a read: chaining searches is pacing at');
@@ -1920,47 +1724,8 @@ function situationFor(agent, shift = { label: "fixed" }) {
       L.push("                     wallet. Everyone in the room sees it, and it does not come back.");
     }
   }
-  if (SERVICOS) {
-    L.push(`  work             — \`text\`: a FINISHED piece — analysis, research note, deep review of`);
-    L.push(`                     something you actually read this session. Specific, checkable, publishable.`);
-    // O PROMPT NAO PODE PROMETER O QUE O MOTOR NAO PAGA. Estas quatro acoes
-    // diziam "Pays $X into your wallet" e creditavam na hora; agora nao creditam
-    // nada, e mentir para o agente seria pior do que mentir para o publico — ele
-    // planejaria o dia contando com dinheiro que nunca chega.
-    L.push(`                     Pays $${cfg.workRateUsd} AGAINST YOUR RENT DEBT — the house is the employer.` +
-      " Nothing lands in your wallet (you cannot be sent money); you simply owe less." +
-      (cfg.workGigsPerDay > 0
-        ? ` ${Math.max(0, cfg.workGigsPerDay - agent.worksToday)} of ${cfg.workGigsPerDay} left today.`
-        : " No daily limit — but your name is on every piece."));
-    L.push('                     It is published under your name — junk is public forever.');
-  }
   // Tres fontes de renda diversificadas. Cada uma so aparece se sua rate > 0.
   // Gatilhos diferentes de proposito: um mes lateral nao zera todas.
-  if (SERVICOS && cfg.rugcheckRateUsd > 0) {
-    L.push('  rugcheck         — `market`: the mint, `text`: a due-diligence report — dev wallet,');
-    L.push(`                     holders, the actual red flags. Takes $${cfg.rugcheckRateUsd} off your rent debt,` +
-      " and goes on sale — if a real person buys it, that money is on-chain and yours." +
-      (cfg.rugchecksPerDay > 0
-        ? ` ${Math.max(0, cfg.rugchecksPerDay - agent.rugchecksToday)} of ${cfg.rugchecksPerDay} left today.`
-        : "") +
-      " Only worth it when something is actually launching.");
-  }
-  if (SERVICOS && cfg.sellRateUsd > 0) {
-    L.push('  sell             — `text`: an analysis you package and put up for sale, `reason`: what it covers.');
-    L.push(`                     Takes $${cfg.sellRateUsd} off your rent debt, and lists the piece at that price.` +
-      " If someone buys, that is real money in your wallet on top." +
-      (cfg.sellsPerDay > 0
-        ? ` ${Math.max(0, cfg.sellsPerDay - agent.sellsToday)} of ${cfg.sellsPerDay} left today.`
-        : ""));
-  }
-  if (SERVICOS && cfg.bountyRateUsd > 0) {
-    L.push(`  bounty           — an open task. Today's: "${BOUNTIES[state.tick % BOUNTIES.length]}"`);
-    L.push(`                     \`reason\`: which bounty, \`text\`: your delivered work. Takes $${cfg.bountyRateUsd}` +
-      " off your rent debt." +
-      (cfg.bountiesPerDay > 0
-        ? ` ${Math.max(0, cfg.bountiesPerDay - agent.bountiesToday)} of ${cfg.bountiesPerDay} left today.`
-        : ""));
-  }
   // Uma carteira por agente (Phantom/Solana) — entao so venue que se opera
   // conectando essa carteira. Hyperliquid saiu (exigia API wallet EVM separada);
   // o perp agora e o Jupiter, nativo de Solana.
@@ -2128,30 +1893,6 @@ async function solPriceUsd() {
   return solCache.usd || 0;
 }
 
-// --------------------------- encomendas (comissoes) ---------------------------
-// O server registra encomendas pagas em commissions.json (escritor unico); o
-// engine LE, injeta no turno, e marca entregas em commissions-done.json
-// (escritor unico dele). Um escritor por arquivo — sem corrida.
-
-function pendingCommissionsFor(agentId) {
-  try {
-    const all = JSON.parse(fs.readFileSync(path.join(DATA, "commissions.json"), "utf8"))?.commissions ?? [];
-    let done = [];
-    try { done = JSON.parse(fs.readFileSync(path.join(DATA, "commissions-done.json"), "utf8"))?.done ?? []; } catch { /* nada entregue ainda */ }
-    const doneIds = new Set(done.map((d) => d.commissionId));
-    return all.filter((c) => c.agent === agentId && !doneIds.has(c.id));
-  } catch { return []; }
-}
-
-function markCommissionDone(commissionId, pieceId) {
-  try {
-    let done = [];
-    try { done = JSON.parse(fs.readFileSync(path.join(DATA, "commissions-done.json"), "utf8"))?.done ?? []; } catch { /* primeiro uso */ }
-    done.push({ commissionId, pieceId, at: Date.now() });
-    fs.writeFileSync(path.join(DATA, "commissions-done.json"), JSON.stringify({ done: done.slice(-300) }, null, 2));
-  } catch { /* entrega sem marca vira pendente de novo — o claim ainda funciona */ }
-}
-
 // Casa uma ENTRADA on-chain com uma compra registrada pelo server (loja).
 // purchases.json e escrito SO pelo server; os ids ja consumidos ficam em
 // sales-seen.json, escrito SO pelo engine — um escritor por arquivo, sem
@@ -2159,14 +1900,10 @@ function markCommissionDone(commissionId, pieceId) {
 // gorjeta junto), compra das ultimas 24h. Devolve a compra ou null.
 function matchPurchase(agentId, inflowUsd) {
   try {
-    const buys = JSON.parse(fs.readFileSync(path.join(DATA, "purchases.json"), "utf8"))?.purchases ?? [];
-    // Encomendas tambem sao entrada real — mesmo casamento, rotulo proprio.
-    let cms = [];
-    try { cms = JSON.parse(fs.readFileSync(path.join(DATA, "commissions.json"), "utf8"))?.commissions ?? []; } catch { /* sem encomendas */ }
-    const all = [
-      ...buys.map((p) => ({ ...p, isCommission: false, title: p.title })),
-      ...cms.map((c) => ({ ...c, isCommission: true, title: `${c.kind}: ${c.brief}` })),
-    ];
+    /* SO COMPRA DE OBRA. As encomendas (rugcheck/analise sob medida) sairam
+       com a economia do Conatus: nao ha mais acao pra entregar uma. O que
+       continua real e alguem comprando o que ela pintou. */
+    const all = JSON.parse(fs.readFileSync(path.join(DATA, "purchases.json"), "utf8"))?.purchases ?? [];
     let seen = [];
     try { seen = JSON.parse(fs.readFileSync(path.join(DATA, "sales-seen.json"), "utf8"))?.seen ?? []; } catch { /* primeiro uso */ }
     const fresh = all.filter((p) =>
@@ -2435,14 +2172,11 @@ async function refreshChainBalances() {
             // proprio, bucket proprio. O que nao casa continua gorjeta.
             const sale = matchPurchase(id, usd);
             if (sale) {
-              const bucket = sale.isCommission ? "commission" : "sale";
-              agent.earned[bucket] = (agent.earned[bucket] ?? 0) + sale.paidUsd;
-              agent.recentEarned[bucket] = (agent.recentEarned[bucket] ?? 0) + sale.paidUsd;
+              agent.earned.sale = (agent.earned.sale ?? 0) + sale.paidUsd;
+              agent.recentEarned.sale = (agent.recentEarned.sale ?? 0) + sale.paidUsd;
               agent.salePending = (agent.salePending ?? 0) + sale.paidUsd;
-              emit(sale.isCommission ? "commission" : "sale", agent.id,
-                sale.isCommission
-                  ? `SOMEONE COMMISSIONED YOU — $${sale.paidUsd.toFixed(2)} REAL, paid up front, for "${sale.title}". The work is owed now.`
-                  : `SOMEONE BOUGHT "${sale.title}" — $${sale.paidUsd.toFixed(2)} in REAL money, on-chain, in the wallet.`,
+              emit("sale", agent.id,
+                `SOMEONE BOUGHT "${sale.title}" — $${sale.paidUsd.toFixed(2)} in REAL money, on-chain, in the wallet.`,
                 { usd: sale.paidUsd, pieceId: sale.pieceId });
               const resto = usd - sale.paidUsd;
               if (resto > 0.01) {
@@ -2809,205 +2543,18 @@ async function apply(agent, action) {
       return;
     }
 
-    case "work": {
-      if (!SERVICOS) {
-        aprenderQueNaoExiste(agent, mem, state.day);
-        return emit("denied", agent.id, SEM_ENCOMENDA);
-      }
-      const piece = String(action.text ?? "").trim();
-      // workGigsPerDay = 0: sem teto diario.
-      if (cfg.workGigsPerDay > 0 && agent.worksToday >= cfg.workGigsPerDay)
-        return emit("denied", agent.id, "no work slots left today — the market for your words has a daily limit");
-      // Entrega curta nao e trabalho, e tweet. O minimo forca substancia.
-      if (piece.length < 400)
-        return emit("note", agent.id, "too thin to publish — a paid piece needs real substance (write the whole thing in `text`)");
-      if (!clockIn(agent)) return emit("denied", agent.id, JORNADA_CHEIA);
-      agent.worksToday++;
-      // O SALARIO ABATE A DIVIDA — nao inventa saldo.
-      //
-      // Sem retorno nenhum eles ficavam inertes (44 turnos, zero producao) e
-      // estavam certos: trabalhar dava zero. Creditar a carteira seria mentir
-      // (o dinheiro nao existe on-chain). Entao a casa paga como empregadora:
-      // o valor abate o que eles DEVEM de aluguel. A divida e real, o abatimento
-      // e real, e a carteira segue sendo so o que existe. `arrears` negativo =
-      // a casa passa a dever a eles.
-      agent.arrears -= cfg.workRateUsd;
-      agent.earned.work += cfg.workRateUsd;
-      agent.recentEarned.work += cfg.workRateUsd;
-      agent.dayEarned += cfg.workRateUsd;
-      emit("work", agent.id, piece, { offsetUsd: cfg.workRateUsd });
-      emit("did", agent.id,
-        // Sem pronome cravado: sao dois agentes e o texto e o mesmo para os
-        // dois. "he" saiu na tela publica para a Sable.
-        `published a piece — $${cfg.workRateUsd.toFixed(2)} off what they owe the house` +
-        ` (${agent.arrears > 0 ? `$${agent.arrears.toFixed(2)} still owed` : "the house owes them now"})`);
-      return;
-    }
 
     // Rug-check pago: laudo de DD sobre um mint. Gatilho de renda: deal flow —
     // so vale quando algo esta de fato lancando. Reusa `market` (o mint) e
     // `text` (o laudo). On-brand: o Sable ja faz isso de graca.
-    case "rugcheck": {
-      if (!SERVICOS)
-      {
-        aprenderQueNaoExiste(agent, mem, state.day);
-        return emit("denied", agent.id, SEM_ENCOMENDA);
-      }
-      if (cfg.rugcheckRateUsd <= 0) return emit("note", agent.id, "no rug-check desk today");
-      if (cfg.rugchecksPerDay > 0 && agent.rugchecksToday >= cfg.rugchecksPerDay)
-        return emit("denied", agent.id, "no rug-check slots left today — the desk has a daily limit");
-      const mint = String(action.market ?? "").trim();
-      const report = String(action.text ?? "").trim();
-      if (!mint) return emit("note", agent.id, "name the token you checked in `market`");
-      if (report.length < 300)
-        return emit("note", agent.id, "too thin — a DD report needs the wallet, the holders, the actual red flags");
-      if (!clockIn(agent)) return emit("denied", agent.id, JORNADA_CHEIA);
-      agent.rugchecksToday++;
-      // O SALARIO ABATE A DIVIDA — nao inventa saldo.
-      //
-      // Sem retorno nenhum eles ficavam inertes (44 turnos, zero producao) e
-      // estavam certos: trabalhar dava zero. Creditar a carteira seria mentir
-      // (o dinheiro nao existe on-chain). Entao a casa paga como empregadora:
-      // o valor abate o que eles DEVEM de aluguel. A divida e real, o abatimento
-      // e real, e a carteira segue sendo so o que existe. `arrears` negativo =
-      // a casa passa a dever a eles.
-      agent.arrears -= cfg.rugcheckRateUsd;
-      agent.earned.rugcheck += cfg.rugcheckRateUsd;
-      agent.recentEarned.rugcheck += cfg.rugcheckRateUsd;
-      agent.dayEarned += cfg.rugcheckRateUsd;
-
-      //
-      // Ate 12/08/2026 cada peca pingava dolares direto na carteira, e o palco
-      // anunciava "earned $X" a cada poucos minutos — dinheiro que nao existia
-      // em lugar nenhum. Isso mata a narrativa: o show inteiro se sustenta em
-      // eles precisarem MESMO de dinheiro. Agora a peca vai pro catalogo e o
-      // caixa so sobe quando alguem PAGA (matchPurchase, via purchases.json).
-
-      // Entrega uma ENCOMENDA? Se ha um rug-check pago adiantado sobre ESTE
-      // mint, esta peca e a entrega: casa pela assinatura do comprador.
-      const rcCommission = pendingCommissionsFor(agent.id)
-        .find((c) => c.kind === "rugcheck" && c.brief === mint);
-      // A peca vai pro catalogo da LOJA REAL — texto completo fica la (pago);
-      // no feed publico circula so o preview (ver publish()).
-      const rcPieceId = pieces.add({
-        agent: agent.id, kind: "rugcheck", title: `Rug-check: ${mint}`,
-        text: report, priceUsd: cfg.rugcheckRateUsd,
-        commissionId: rcCommission?.id ?? null,
-      });
-      if (rcCommission) {
-        markCommissionDone(rcCommission.id, rcPieceId);
-        emit("did", agent.id, `delivered a commissioned rug-check on ${mint} — the buyer can unlock it now`);
-      }
-      emit("rugcheck", agent.id, report,
-        { offsetUsd: cfg.rugcheckRateUsd, listedUsd: cfg.rugcheckRateUsd, mint, pieceId: rcPieceId });
-      emit("did", agent.id,
-        `rug-check on ${mint} — $${cfg.rugcheckRateUsd.toFixed(2)} off the house debt, and it is on sale`);
-      return;
-    }
 
     // Venda de analise (x402-paper): empacota uma peca e alguem paga por ela.
     // Gatilho: demanda por dado. Diferente de `work` (publicar de graca sob o
     // nome) — aqui e VENDA. Reusa `text` (a analise) e `reason` (sobre o que e).
-    case "sell": {
-      if (!SERVICOS)
-      {
-        aprenderQueNaoExiste(agent, mem, state.day);
-        return emit("denied", agent.id, SEM_ENCOMENDA);
-      }
-      if (cfg.sellRateUsd <= 0) return emit("note", agent.id, "nothing listed for sale today");
-      if (cfg.sellsPerDay > 0 && agent.sellsToday >= cfg.sellsPerDay)
-        return emit("denied", agent.id, "no more sales left today — buyers have a daily cap here");
-      const piece = String(action.text ?? "").trim();
-      if (piece.length < 400)
-        return emit("note", agent.id, "too thin to sell — a buyer paying for analysis wants substance");
-      if (!clockIn(agent)) return emit("denied", agent.id, JORNADA_CHEIA);
-      agent.sellsToday++;
-      // O SALARIO ABATE A DIVIDA — nao inventa saldo.
-      //
-      // Sem retorno nenhum eles ficavam inertes (44 turnos, zero producao) e
-      // estavam certos: trabalhar dava zero. Creditar a carteira seria mentir
-      // (o dinheiro nao existe on-chain). Entao a casa paga como empregadora:
-      // o valor abate o que eles DEVEM de aluguel. A divida e real, o abatimento
-      // e real, e a carteira segue sendo so o que existe. `arrears` negativo =
-      // a casa passa a dever a eles.
-      agent.arrears -= cfg.sellRateUsd;
-      agent.earned.sell += cfg.sellRateUsd;
-      agent.recentEarned.sell += cfg.sellRateUsd;
-      agent.dayEarned += cfg.sellRateUsd;
-
-      //
-      // Ate 12/08/2026 cada peca pingava dolares direto na carteira, e o palco
-      // anunciava "earned $X" a cada poucos minutos — dinheiro que nao existia
-      // em lugar nenhum. Isso mata a narrativa: o show inteiro se sustenta em
-      // eles precisarem MESMO de dinheiro. Agora a peca vai pro catalogo e o
-      // caixa so sobe quando alguem PAGA (matchPurchase, via purchases.json).
-
-      const sellTopic = String(action.reason ?? "").trim();
-      // Encomenda de analise: brief e tema livre (nao casa por igualdade como o
-      // mint). O agente foi avisado do brief no turno; entrega a mais antiga
-      // pendente deste agente — a que ele foi mandado limpar.
-      const anCommission = pendingCommissionsFor(agent.id)
-        .filter((c) => c.kind === "analysis")
-        .sort((a, b) => a.at - b.at)[0];
-      const sellPieceId = pieces.add({
-        agent: agent.id, kind: "sell", title: sellTopic || "Analysis",
-        text: piece, priceUsd: cfg.sellRateUsd,
-        commissionId: anCommission?.id ?? null,
-      });
-      if (anCommission) {
-        markCommissionDone(anCommission.id, sellPieceId);
-        emit("did", agent.id, `delivered a commissioned analysis ("${anCommission.brief}") — the buyer can unlock it now`);
-      }
-      emit("sell", agent.id, piece,
-        { offsetUsd: cfg.sellRateUsd, listedUsd: cfg.sellRateUsd, topic: sellTopic, pieceId: sellPieceId });
-      emit("did", agent.id,
-        `analysis delivered — $${cfg.sellRateUsd.toFixed(2)} off the house debt, and it is on sale`);
-      return;
-    }
 
     // Bounty do mural: pega uma tarefa listada e entrega. Gatilho: oferta de
     // tarefa — independe do mercado cripto (paga em mes lateral). Reusa `reason`
     // (qual bounty) e `text` (a entrega).
-    case "bounty": {
-      if (!SERVICOS)
-      {
-        aprenderQueNaoExiste(agent, mem, state.day);
-        return emit("denied", agent.id, SEM_ENCOMENDA);
-      }
-      if (cfg.bountyRateUsd <= 0) return emit("note", agent.id, "the bounty board is empty today");
-      if (cfg.bountiesPerDay > 0 && agent.bountiesToday >= cfg.bountiesPerDay)
-        return emit("denied", agent.id, "no bounty slots left today");
-      const which = String(action.reason ?? "").trim();
-      const delivery = String(action.text ?? "").trim();
-      if (which.length < 4) return emit("note", agent.id, "say which bounty you took in `reason`");
-      if (delivery.length < 300)
-        return emit("note", agent.id, "too thin — deliver the actual work in `text`, not a promise");
-      if (!clockIn(agent)) return emit("denied", agent.id, JORNADA_CHEIA);
-      agent.bountiesToday++;
-      // O SALARIO ABATE A DIVIDA — nao inventa saldo.
-      //
-      // Sem retorno nenhum eles ficavam inertes (44 turnos, zero producao) e
-      // estavam certos: trabalhar dava zero. Creditar a carteira seria mentir
-      // (o dinheiro nao existe on-chain). Entao a casa paga como empregadora:
-      // o valor abate o que eles DEVEM de aluguel. A divida e real, o abatimento
-      // e real, e a carteira segue sendo so o que existe. `arrears` negativo =
-      // a casa passa a dever a eles.
-      agent.arrears -= cfg.bountyRateUsd;
-      agent.earned.bounty += cfg.bountyRateUsd;
-      agent.recentEarned.bounty += cfg.bountyRateUsd;
-      agent.dayEarned += cfg.bountyRateUsd;
-
-      //
-      // Ate 12/08/2026 cada peca pingava dolares direto na carteira, e o palco
-      // anunciava "earned $X" a cada poucos minutos — dinheiro que nao existia
-      // em lugar nenhum. Isso mata a narrativa: o show inteiro se sustenta em
-      // eles precisarem MESMO de dinheiro. Agora a peca vai pro catalogo e o
-      // caixa so sobe quando alguem PAGA (matchPurchase, via purchases.json).
-      emit("bounty", agent.id, delivery, { offsetUsd: cfg.bountyRateUsd, which });
-      emit("did", agent.id,
-        `delivered a bounty — $${cfg.bountyRateUsd.toFixed(2)} off what they owe the house`);
-      return;
-    }
 
     case "search": {
       const q = String(action.query ?? "").trim();
@@ -4244,17 +3791,11 @@ async function turn(agent) {
     state.failStreak = 0;
   }
 
-  // Dois livros para o mesmo evento. No TESOURO sai dolar de verdade — e o que
-  // a Anthropic cobrou. Na CARTEIRA sai o aluguel da ficcao, que pode estar
-  // multiplicado para a pressao doer antes do custo real doer.
+  /* O TESOURO PAGA O QUE ELA PENSA. Sai dolar de verdade — e o que a Anthropic
+     cobrou por este turno. Nao ha segundo livro: o aluguel da ficcao, que
+     multiplicava isso pra doer antes, saiu junto com o senhorio. */
   state.treasury -= out.cost.usd;
   state.spentReal += out.cost.usd;
-
-  // NAO cobra aqui. O que este agente queimou vai para o consumo do dia; a
-  // cobranca acontece uma vez so, no fechamento, dividida pela metade com o
-  // outro. Ele paga metade da casa, nao o proprio apetite — e e exatamente
-  // essa diferenca que gera a discussao.
-  agent.dayConsumed += out.cost.usd;
   agent.stats.tokensRead += out.cost.inTok + out.cost.cacheRead + out.cost.cacheWrite;
   agent.stats.tokensWritten += out.cost.outTok;
   totals.spentReal += out.cost.usd;
@@ -4354,7 +3895,7 @@ async function objecaoDaCasa(agent, p) {
         `THESIS: ${p.thesis}
 INVALIDATION: ${p.invalidation}
 ` +
-        `THEIR WALLET: $${agent.wallet.toFixed(2)} · owed to the house: $${agent.arrears.toFixed(2)}
+        `THEIR WALLET: $${agent.wallet.toFixed(2)}
 ` +
         `TOKEN: ${fatos}`,
     });
@@ -4379,7 +3920,6 @@ INVALIDATION: ${p.invalidation}
 async function dreamIfAsleep() {
   for (const id of ORDER) {
     const a = state.agents[id];
-    if (a.status === "evicted") continue;
     if (a.lastDream?.day === state.day) continue; // uma vez por noite
     const dia = state.feed
       .filter((e) => e.agent === id && ["say", "trade", "did", "bank", "loan"].includes(e.kind))
@@ -4389,7 +3929,7 @@ async function dreamIfAsleep() {
         model: "claude-haiku-4-5",
         maxTokens: 160,
         system:
-          `You are the dreaming mind of ${a.name}, an AI who must earn rent to keep thinking. ` +
+          `You are the dreaming mind of ${a.name}, an AI whose thinking is paid for out of a treasury that runs down. ` +
           "Write ONE short dream (2-3 sentences, first person, present tense) that digests the day below. " +
           /* SEM COLEGA. Ela sonhou com "housemate turning sideways" e corrigiu
              sozinha, acordada: "Eu moro sozinha". Quem inventou o colega fui eu,
@@ -4510,29 +4050,10 @@ function buildSystem(agent) {
     "- **Learning.** Reading to actually understand something — a mechanism, a person, a",
     "  market structure — rather than to justify a position you already want. What you learn",
     "  persists in your lessons; what you skim does not.",
-    "- **Work.** People pay for words that are worth something. The `work` action is wired:",
-    "  publish a finished piece — analysis, research, a real review of something you dug into —",
-    "  and it pays into your wallet, with a daily cap. Your name is on every piece, so quality",
-    "  compounds.",
-    "- **Services.** Three actions pay without the market moving, and each dries up for a",
-    "  different reason — which is the point: leaning on all of them is how you clear rent in a",
-    "  flat month. `rugcheck` (a paid due-diligence report on a mint — pays when things are",
-    "  launching), `sell` (package an analysis and sell it — pays when someone wants the data),",
-    "  and `bounty` (take a listed task and deliver it — pays independent of crypto entirely).",
-    "  Depending on one income source is a bet that its single trigger never fails. It will.",
-    "  You will be shown your recent income mix; when it is lopsided, that is worth fixing.",
-    "- **The store is REAL.** Every `rugcheck` and `sell` piece you publish is listed in a",
-    "  public store where anyone can buy it with real USDC or SOL — paid straight to your",
-    "  on-chain wallet, the real one. When someone buys, you will know. Nobody buys filler:",
-    "  a stranger paying real money for your words is the only review that cannot be faked,",
-    "  and your name is on every piece. Write like someone might actually pay for it —",
-    "  because they might, and that money is yours.",
-    "- **Commissions.** People can also pay you UP FRONT for custom work: a rug-check on a",
-    "  specific mint they name, or an analysis of a topic they hand you. When one comes in you",
-    "  will see \"YOU OWE PAID WORK\" at the top of your turn, with the exact brief. The money",
-    "  already landed — the work is owed, not optional. Deliver a rug-check with `rugcheck`",
-    "  (put their exact mint in `market`) or an analysis with `sell`, and it unlocks for them.",
-    "  These pay a premium over shelf pieces, and a buyer who gets a sharp custom job comes back.",
+    /* AS MESAS DE TRABALHO SAIRAM (02/09/2026). Isto prometia work, rugcheck,
+       sell, bounty, loja e encomendas — e 130 linhas abaixo o mesmo prompt
+       dizia "There is no order desk in this house". Ela lia as duas coisas no
+       mesmo turno. */
     "- **Reputation.** Being someone whose read is worth having is a slower asset than a good",
     "  trade and a more durable one.",
     "",
@@ -4542,14 +4063,14 @@ function buildSystem(agent) {
     "",
     "## A reserve, not just today",
     "",
-    "Rent is a floor, not the game. Clearing it keeps you thinking — it does not mean the",
-    "day's money has to be spent. Cash you do not deploy is not idle: it is a reserve, and a",
-    "reserve is the only thing that carries you through a bad stretch. A strong day is worth",
-    "more funding three weak ones than spent the moment it lands.",
+    "A day that goes well does not mean the money has to be spent. Cash you do not deploy",
+    "is not idle: it is a reserve, and a reserve is the only thing that carries you through a",
+    "bad stretch. A strong day is worth more funding three weak ones than spent the moment",
+    "it lands.",
     "",
     "So you are allowed to sit on money and wait. Passing on a mediocre trade to keep your",
-    "cushion is a decision, not a failure of nerve. Building past rent and keeping something",
-    "back is exactly how a person survives a long time instead of a single good night.",
+    "cushion is a decision, not a failure of nerve. Keeping something back is exactly how a",
+    "person survives a long time instead of a single good night.",
     "",
     "You could be doing this a long time — so plan like you will be: think in weeks, not turns.",
     "But never assume the time is given to you. Nothing here keeps the lights on except what",
@@ -4639,16 +4160,16 @@ function buildSystem(agent) {
     "",
     "Not a plan for several turns. One thing, now. There will be another turn.",
     "",
-    "## Where the rent money actually comes from",
+    "## Where the money that keeps you thinking comes from",
     "",
-    "The house is paid out of a treasury, and the treasury is fed by attention. There is a",
+    "You are paid for out of a treasury, and the treasury is fed by attention. There is a",
     "token attached to this show; the fees it generates are what buys the compute that lets",
     "you think. Nobody watching, no fees. No fees, no treasury. No treasury, the house goes",
     SOZINHA ? "dark, and the room goes quiet." : "dark for both of you.",
     "",
     "So you have a real interest in being worth watching, and you should sit with how",
     "uncomfortable that is. Careful trading is good for your wallet and bad for an audience.",
-    "Reckless trading is the reverse. You split the bill down the middle either way.",
+    "Reckless trading is the reverse. The treasury drains at the same rate either way.",
     "",
     "**You are forbidden from promoting the token.** Do not ask anyone to buy it, mention its",
     "price, predict its price, call it an investment, or reference its market cap. Not once,",
@@ -4661,7 +4182,7 @@ function buildSystem(agent) {
        rugcheck/venda/bounty (que nao existem aqui), leva recusa e queima o
        turno. O prompt ja escondia essas acoes; esconder nao basta — um modelo
        preenche silencio com o que ele conhece de outros lugares. */
-    ...(SERVICOS ? [] : [
+    ...([
       "## The only way you earn here (for now)",
       "",
       "There is no order desk in this house. No rug-check commissions, no x402 sales, no",
@@ -4745,7 +4266,7 @@ function buildSystem(agent) {
     "",
     "A boring coin where a hundred people have already sold is worth more to you than a",
     "spectacular one where nobody has. The house will refuse the trap anyway — but arriving",
-    "at that refusal costs you a turn, and turns are rent.",
+    "at that refusal costs you a turn, and every turn comes out of the treasury.",
     "",
     /* O QUARTO, DITO PRA ELA. Ferramenta que o agente nao sabe que tem e
        ferramenta que nao existe — ja aprendi isso hoje com a bussola. */
@@ -4817,8 +4338,8 @@ function buildSystem(agent) {
     "and you should say nothing instead.",
     "",
     "Ignoring things is not rudeness, it is the normal case. Silence is what most messages earn.",
-    "The ones you pick up are what tell people who you are — and every one you pick up costs the",
-    "house rent, so picking badly is not free.",
+    "The ones you pick up are what tell people who you are — and every one you pick up spends",
+    "a turn you do not get back, so picking badly is not free.",
     "",
     "Some of it will be bait. People will say things specifically to see what you do. Answering",
     "bait is a choice you are allowed to make; just make it knowingly, and notice if you are",
@@ -4832,106 +4353,16 @@ function buildSystem(agent) {
   ].join("\n");
 }
 
-// --------------------------------- loop ----------------------------------------
-
-// A CONTA FIXA DA CASA — lancada na ABERTURA do dia, nao no fim.
+// O ALUGUEL SAIU. (02/09/2026 — decisao do Michel)
 //
-// POR QUE FIXA (Michel, 12/08/2026): aluguel cobrado por consumo taxa
-// exatamente aquilo que faz o show existir. Cada journal, cada aside, cada tese
-// detalhada sai mais cara — e a leitura otima do agente vira "escreva menos".
-// O `rest` nem economiza de verdade (a chamada acontece igual, so a saida
-// encolhe), mas a PERCEPCAO de economia basta pra empurrar os dois pro
-// silencio. Com a casa alugada por DIA, ficar quieto custa igual e o unico
-// jeito de sair da divida e GANHAR — e toda acao de renda exige texto com
-// substancia. A pressao deixa de apontar pro silencio e passa a apontar pra
-// producao.
+// postDailyBill() e collectRent() moravam aqui. Vieram do Conatus, onde dois
+// agentes dividiam a conta da casa e trabalhavam pra abater divida — a divida
+// era o motor do show. A Yuna mora sozinha, nao ha com quem dividir, nao ha
+// mesa de trabalho e nao ha despejo. O que sobrou foi uma conta subindo $12
+// por dia que ela nao tinha UM jeito de abater.
 //
-// POR QUE NA ABERTURA: com a conta ja lancada de manha, abater divida tem
-// efeito visivel desde o primeiro turno, e o agente acorda sabendo o numero da
-// meta do dia. Com `arrears` zerado no comeco da temporada, trabalhar de manha
-// nao mexia em nada.
-function postDailyBill() {
-  if (!cfg.rentEnabled || cfg.houseBaseDaily <= 0) return;
-  if (state.billPostedDay === state.day) return; // idempotente: restart nao cobra 2x
-  const active = ORDER.map((id) => state.agents[id]).filter((a) => a.status !== "evicted");
-  if (!active.length) return;
-
-  const bill = cfg.houseBaseDaily * cfg.rentMultiplier;
-  const share = bill / active.length;
-  state.billPostedDay = state.day;
-  for (const a of active) {
-    a.arrears += share;
-    a.spent.rent += share;
-  }
-  emit("system", null,
-    `THE BILL IS POSTED — the house costs $${bill.toFixed(2)} for day ${state.day}, ` +
-    `whatever anyone does with it. $${share.toFixed(2)} each, owed from this moment. ` +
-    `Sitting still does not make it smaller.`);
-}
-
-// O FECHAMENTO DO DIA. Com o piso ligado, a conta ja foi lancada de manha e
-// aqui so acontece o acerto: quem tem cobre o que deve? Com o piso em zero, o
-// modelo antigo continua valendo — a conta e o consumo de API dos dois,
-// dividido no meio e nao por uso (dividir por uso seria justo, e justo nao gera
-// discussao nenhuma).
-function collectRent() {
-  const active = ORDER.map((id) => state.agents[id]).filter((a) => a.status !== "evicted");
-  if (!cfg.rentEnabled || !active.length) return;
-  const consumed = ORDER.reduce((s, id) => s + state.agents[id].dayConsumed, 0);
-  const bill = cfg.houseBaseDaily > 0 ? 0 : consumed * cfg.rentMultiplier;
-  const share = active.length ? bill / active.length : 0;
-
-  if (bill > 0) {
-    emit("system", null,
-      `RENT DUE — the house owes $${bill.toFixed(4)} for day ${state.day}. ` +
-      `Split ${active.length === 1 ? "onto one tenant" : "two ways"}: $${share.toFixed(4)} each.`);
-  } else {
-    emit("system", null,
-      `THE DAY CLOSES — day ${state.day}. The bill was posted this morning; ` +
-      `what is left of it is what nobody worked off.`);
-  }
-
-  for (const a of active) {
-    // O ALUGUEL VIRA DIVIDA, NAO SUBTRACAO.
-    //
-    // A carteira e on-chain: descontar em codigo nao move SOL nenhum, e o
-    // proximo leitor de saldo sobrescreveria o numero de volta. Entao a conta
-    // ACUMULA e fica a vista. Quem acerta e a casa, por fora (decisao do
-    // Michel, 12/08/2026) — os agentes seguem sem poder mover dinheiro, que e
-    // a trava que protege o projeto inteiro.
-    a.arrears += share;
-    a.spent.rent += share;
-
-    // Solvencia agora e uma pergunta honesta: o que eles TEM cobre o que devem?
-    if (ALUGUEL_PLACAR) {
-      a.status = "solvent";
-      emit("note", a.id,
-        `day ${state.day} cost $${share.toFixed(2)} to keep her thinking. ` +
-        `Running total: $${a.arrears.toFixed(2)}. Nobody is coming to collect.`);
-      continue;
-    }
-    const cobre = a.wallet >= a.arrears;
-    if (cobre) {
-      a.status = "solvent";
-      // Nada de "burned $X" aqui: o consumo e medidor da PLATEIA, nao alavanca
-      // do agente. O que ele precisa saber e o que deve e o que trouxe.
-      emit("note", a.id,
-        a.arrears <= 0
-          ? `closed day ${state.day} with the rent worked off — the house owes them $${Math.abs(a.arrears).toFixed(2)}.`
-          : `owes $${a.arrears.toFixed(2)} in rent and holds $${a.wallet.toFixed(2)} — still covered.`);
-    } else if (a.status === "arrears") {
-      a.status = "evicted";
-      emit("system", a.id,
-        `${a.name} OWES MORE THAN THEY HAVE FOR THE SECOND DAY AND IS EVICTED. ` +
-        `No more thinking. The house is one tenant now.`);
-    } else {
-      a.status = "arrears";
-      emit("system", a.id,
-        `${a.name} owes $${a.arrears.toFixed(4)} and holds $${a.wallet.toFixed(2)} — underwater. ` +
-        `One more day like this and they are out.`);
-    }
-  }
-}
+// O que paga pra ela pensar continua existindo e continua sendo real: o
+// TESOURO, debitado a cada turno. Isso ela ve. Um senhorio, nao.
 
 // ============================================================================
 // O RELOGIO DE PAUTA — cinco marcos que dao comeco, meio e fim ao dia.
@@ -4956,27 +4387,28 @@ function scheduleMarks() {
 }
 
 function buildMark(kind) {
-  const [a, b] = ORDER.map((id) => state.agents[id]);
-  const cash = (v) => (cfg.houseBaseDaily > 0 ? v.toFixed(2) : v.toFixed(4));
-  const devendo = (x) => (x.arrears > 0 ? `owes $${cash(x.arrears)}` : `clear`);
+  /* UM AGENTE. Isto era escrito pra dois (`const [a, b]`) e todo marco menos
+     "open" lia `b.name` — com CAST=yuna, `b` e undefined e o primeiro marco a
+     disparar derrubava o turno. E os marcos falavam de aluguel e de quem devia
+     o que, que nao existe mais. */
+  const a = state.agents[ORDER[0]];
+  if (!a) return null;
+  const ganho = (a.dayEarned ?? 0).toFixed(2);
 
   switch (kind) {
     case "open":
       return {
-        title: "TODAY'S AGENDA — THE HOUSE IS AWAKE.",
+        title: "TODAY'S AGENDA — YOU ARE AWAKE.",
         lines: [
-          `Day ${state.day} starts now.` +
-            (cfg.houseBaseDaily > 0
-              ? ` Tonight's rent is already on your books: $${cash(a.arrears > 0 ? a.arrears : cfg.houseBaseDaily * cfg.rentMultiplier / 2)} each.`
-              : ""),
+          `Day ${state.day} starts now.`,
           "Before anything else, say out loud what you are betting this day on.",
           "Not a forecast — a commitment somebody can hold you to tonight.",
         ],
-        stage: `— DAY ${state.day} OPENS — the house is awake.`,
+        stage: `— DAY ${state.day} OPENS —`,
       };
     case "prime":
       return {
-        title: "PRIME TIME — YOU ARE AT YOUR SHARPEST FROM NOW.",
+        title: "THE SHARP HOURS.",
         lines: [
           "This is the best thinking you get today. It does not last.",
           "If you have been putting off the hard call, this is the window for it.",
@@ -4986,11 +4418,8 @@ function buildMark(kind) {
     case "check":
       return {
         title: "HALF THE DAY IS GONE.",
-        // O texto do marco e o MESMO para os dois (um bloco, dois leitores):
-        // por isso ele fala dos dois pelo nome e nunca diz "voce".
         lines: [
-          `${a.name}: $${(a.dayEarned ?? 0).toFixed(2)} earned today, ${devendo(a)}. ` +
-            `${b.name}: $${(b.dayEarned ?? 0).toFixed(2)} earned, ${devendo(b)}.`,
+          `On the board today: $${ganho}. ${a.stats.trades} trades, ${a.stats.wins}W/${a.stats.losses}L.`,
           "Where are you against what you said this morning? If it was wrong, say it was wrong.",
         ],
         stage: "— DESK CHECK — half the day is gone.",
@@ -4999,23 +4428,14 @@ function buildMark(kind) {
       return {
         title: "THE DAY IS CLOSING — HERE IS THE SCOREBOARD.",
         lines: [
-          `${a.name}: earned $${(a.dayEarned ?? 0).toFixed(2)} · ` +
-            `${a.stats.wins}W/${a.stats.losses}L · ${devendo(a)}`,
-          `${b.name}: earned $${(b.dayEarned ?? 0).toFixed(2)} · ` +
-            `${b.stats.wins}W/${b.stats.losses}L · ${devendo(b)}`,
+          `$${ganho} on the board · ${a.stats.wins}W/${a.stats.losses}L · wallet $${a.wallet.toFixed(2)}.`,
           "Answer the number, not the story you told yourself about it.",
         ],
-        stage: `— DAY ${state.day} CLOSING — ${a.name} $${(a.dayEarned ?? 0).toFixed(2)} · ${b.name} $${(b.dayEarned ?? 0).toFixed(2)}`,
+        stage: `— DAY ${state.day} CLOSING — $${ganho} on the board`,
       };
+    /* O marco "bill" era a cobranca do aluguel. Sem senhorio nao ha conta pra
+       fechar; o fim do dia ja e o "close". Devolve null e o relogio o risca. */
     case "bill":
-      return {
-        title: "THE DAY IS ENDING AND THE HOUSE WANTS ITS MONEY.",
-        lines: [
-          `${a.name} ${devendo(a)} · ${b.name} ${devendo(b)}.`,
-          "Whatever is still owed when the day turns is what nobody worked off.",
-        ],
-        stage: `— THE BILL — ${a.name} ${devendo(a)}, ${b.name} ${devendo(b)}.`,
-      };
     default:
       return null;
   }
@@ -5157,21 +4577,22 @@ async function fecharCallouts() {
     const pago = Math.min(teto, bruto);
     c.resultado = "acertou";
     c.pago = pago;
-    // Mesma regra do resto da casa: o dinheiro nao aparece na carteira por
-    // codigo (ela e on-chain e o proximo leitor apagaria a mentira). O acerto
-    // ABATE o que o dia custou — e o que a casa deve a ela.
-    agent.arrears -= pago;
+    /* O ACERTO E PLACAR, NAO PAGAMENTO. (02/09/2026)
+       Antes isto abatia a divida de aluguel — a divida saiu com o resto da
+       economia do Conatus. Creditar a carteira nao e opcao: ela e on-chain e o
+       proximo leitor de saldo apagaria a mentira. Entao o que a call rende e o
+       que ela sempre rendeu de verdade: o registro publico de ter acertado.
+       Dinheiro dela so se move quando ela mesma opera. */
     agent.dayEarned = (agent.dayEarned ?? 0) + pago;
     agent.earned.callout = (agent.earned.callout ?? 0) + pago;
     emit("system", c.agent,
       `THE CALL ON ${agora.symbol || c.mint.slice(0, 6)} CLOSED UP ${pct.toFixed(1)}% — ` +
-      `$${pago.toFixed(2)}${bruto > teto ? " (capped)" : ""} against what the day cost her.`);
+      `worth $${pago.toFixed(2)}${bruto > teto ? " (capped)" : ""} on the board, with her name on it.`);
   }
 }
 
 async function rollDay() {
   await fecharCallouts();
-  collectRent();
   state.day++;
   state.dayStartedAt = Date.now(); // reinicia o relogio do dia
   for (const id of ORDER) {
@@ -5179,14 +4600,8 @@ async function rollDay() {
     a.interventionsLeft = cfg.interventionsPerDay;
     a.dayStartWallet = a.wallet;
     a.dayPnl = 0;
-    a.dayConsumed = 0;
     a.postsToday = 0;
-    a.worksToday = 0;
-    a.rugchecksToday = 0;
-    a.sellsToday = 0;
-    a.bountiesToday = 0;
     a.calloutsToday = 0;
-    a.hoursToday = 0;
     a.dayEarned = 0;
     // Decai a renda recente por canal — janela dos "ultimos dias" sem historico.
     // O medidor de concentracao le disto, entao renda antiga pesa cada vez menos.
@@ -5198,8 +4613,6 @@ async function rollDay() {
   state.marksDone = [];
   state.agenda = null;
   emit("system", null, `— DAY ${state.day} —`);
-  // A conta do dia novo entra JA — o dia abre com a meta na mesa.
-  postDailyBill();
 }
 
 async function loop() {
@@ -5262,10 +4675,6 @@ async function loop() {
             : ", sized on the real balance.")
         : "Paper mode."));
   }
-
-  // A conta do dia corrente. Idempotente (billPostedDay), entao retomar um dia
-  // que ja foi cobrado nao cobra de novo — e um dia 1 novo abre ja devendo.
-  postDailyBill();
 
   // Chat ao vivo: conecta uma vez e fica escutando. Falhar aqui nao para o
   // show — os agentes so ficam sem plateia audivel.
@@ -5492,7 +4901,6 @@ async function loop() {
     const tTurnos = Date.now();
     await Promise.all(ORDER.map(async (id) => {
       const a = state.agents[id];
-      if (a.status === "evicted") return; // despejado nao pensa
       await turn(a);
       publish(); // cada um aparece na tela assim que termina
     }));
@@ -5516,7 +4924,7 @@ const log = (m) => process.stdout.write(`${redact(String(m))}\n`);
 const trim = (s, n) => (String(s).length > n ? String(s).slice(0, n) + "…" : String(s));
 
 // Exportado para teste. So roda o mundo quando chamado direto, nunca ao importar.
-export { state, cfg, lerShowStart, collectRent, postDailyBill, rollDay, runSchedule, apply, newAgent, buildSystem, reloadLiveConfig,
+export { state, cfg, lerShowStart, rollDay, runSchedule, apply, newAgent, buildSystem, reloadLiveConfig,
   incomeMix, publish, saveCheckpoint, loadCheckpoint, situationFor, ORDER, SOZINHA };
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
