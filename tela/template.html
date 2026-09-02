@@ -1,0 +1,1974 @@
+<title>Yuna's room</title>
+<link rel="icon" type="image/png" sizes="96x96" href="/icone-yuna.png">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/icone-yuna-180.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Cena noturna: tema unico e deliberado. A pagina e a moldura escura de um
+     quarto neon — um tema claro brigaria com a arte. Cores todas explicitas. */
+  :root{
+    --breu:#100c17; --painel:#191322; --linha:#2b2136;
+    --neon:#ff4fa3; --menta:#7fd0a0; --alerta:#e05252;
+    --texto:#cdc0da; --fraco:#8a7a9c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--breu);color:var(--texto);min-height:100vh;
+    font-family:"IBM Plex Mono",ui-monospace,monospace;
+    display:flex;flex-direction:column;align-items:center;gap:18px;padding:22px 16px 34px}
+  header{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+  h1{font-family:"Silkscreen","IBM Plex Mono",monospace;font-weight:700;
+    font-size:clamp(17px,3.2vw,28px);letter-spacing:.04em;color:#fff;text-wrap:balance}
+  .sub{font-size:12px;color:var(--fraco);letter-spacing:.05em;max-width:64ch;line-height:1.7}
+  .quadro{width:min(100%,1376px);border:1px solid var(--linha);border-radius:4px;
+    overflow:hidden;background:#000;box-shadow:0 0 0 1px #0c0812,0 22px 60px -30px var(--neon)}
+  canvas{display:block;width:100%;height:auto;cursor:crosshair}
+  .barra{width:min(100%,1376px);display:flex;flex-wrap:wrap;gap:10px 22px;
+    align-items:center;justify-content:space-between;font-size:12px}
+  .grupo{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button{font:inherit;font-size:12px;color:var(--texto);background:var(--painel);
+    border:1px solid var(--linha);border-radius:3px;padding:7px 13px;cursor:pointer;
+    letter-spacing:.03em;transition:border-color .15s,color .15s}
+  button:hover{border-color:var(--neon);color:#fff}
+  button:focus-visible{outline:2px solid var(--neon);outline-offset:2px}
+  button[aria-pressed="true"]{border-color:var(--neon);color:#fff;
+    box-shadow:inset 0 0 0 1px rgba(255,79,163,.3)}
+  .leitura{display:flex;gap:16px;color:var(--fraco);font-variant-numeric:tabular-nums}
+  .leitura b{color:var(--menta);font-weight:500}
+  .nota{font-size:11px;color:var(--fraco);max-width:72ch;text-align:center;line-height:1.8}
+  @media (prefers-reduced-motion:reduce){.quadro{box-shadow:0 0 0 1px #0c0812}}
+
+  /* ================== O NAVEGADOR AO VIVO ==============================
+     Quando ela senta no PC, o espectador tem que VER o que ela ve. O painel
+     da esquerda abre com o navegador remoto dela; quando ela levanta, fecha e
+     o quarto volta a ocupar tudo. A transicao e de largura, nao de opacidade:
+     o quarto nao pode piscar no meio da live. */
+  /* O NAVEGADOR FLUTUA POR CIMA — nao empurra o quarto.
+     Foi o Michel quem desenhou assim no editor: janela colada na esquerda, com
+     folga em cima e embaixo, e o quarto INTEIRO atras. A versao anterior era
+     uma faixa que encolhia a cena; esta mantem o palco do mesmo tamanho o tempo
+     todo, entao nada se mexe quando ela senta ou levanta do PC.
+     Os quatro numeros sao os que ele marcou, em % da tela. */
+  .cena-viva{position:relative;width:100%;height:100%;
+    --nav-x:0.17%; --nav-y:5.73%; --nav-w:47%; --nav-h:78.6%;
+    --pr-x:0.17%; --pr-w:38%}
+  /* CLASSE, nao `:not([hidden])`. A regra `.navegador:not([hidden])` tem
+     especificidade maior e MESMO ASSIM perdia pro shorthand `flex` na pratica —
+     o painel abria com largura zero. Uma classe explicita e previsivel, e o
+     state fica visivel no DOM pra quem for depurar. */
+  .navegador{position:absolute;left:var(--nav-x);top:var(--nav-y);
+    width:var(--nav-w);height:var(--nav-h);z-index:5;
+    display:flex;flex-direction:column;overflow:hidden;background:#0a0810;
+    border:1px solid rgba(255,79,163,.5);border-radius:4px;
+    box-shadow:0 .8em 2.4em rgba(0,0,0,.55);
+    opacity:0;transform:translateX(-2%);pointer-events:none}
+  /* SEM TRANSICAO. A animacao de opacidade dependia do compositor do navegador,
+     que PAUSA quando a janela nao esta em primeiro plano: o painel abria e
+     ficava preso em 0,27 de opacidade — visivel no inspetor, invisivel na tela.
+     O Michel viu o ciclo inteiro de compra e venda acontecer atras de um painel
+     fantasma. Numa transmissao 24/7 nada pode depender de animacao CSS. */
+  .navegador.aberto{opacity:1;transform:none}
+  .navegador-topo{display:flex;align-items:center;gap:.5em;padding:.45em .8em;
+    background:rgba(255,79,163,.14);border-bottom:1px solid rgba(255,79,163,.35);
+    font:600 12px/1 "IBM Plex Mono",monospace;color:#ffb3d9;letter-spacing:.06em;
+    text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .navegador-topo i{width:.55em;height:.55em;border-radius:50%;background:#ff3b47;
+    flex:0 0 auto;animation:pulsaRec 1.5s infinite}
+  @keyframes pulsaRec{50%{opacity:.25}}
+  .navegador iframe{flex:1;width:100%;border:0;background:#0a0810}
+
+  /* A PRANCHETA: a mesma janela, do outro lado.
+     Quando ela senta no tapete com o iPad, o que abre nao e o navegador — e a
+     tela do desenho, com o traco nascendo. Escolha do Michel: o navegador na
+     ESQUERDA, o desenho na DIREITA, porque assim o balao de fala tem pra onde
+     ir (ele vira pro lado oposto do painel aberto) e ela nunca fica coberta.
+     Herda .navegador inteiro: mesma moldura, mesmo comportamento de abrir. So
+     a ancora e a largura mudam — o canvas e mais quadrado que um navegador. */
+  .prancheta{left:auto;right:var(--pr-x);width:var(--pr-w);
+    transform:translateX(2%)}
+  .prancheta.aberto{transform:none}
+  /* O CONSOLE DA BANCADA. Herda .navegador inteiro e ocupa O MESMO lugar dele:
+     programar e navegar sao acoes diferentes e ela so faz uma por turno, entao
+     os dois nunca abrem juntos. A tela mostra o que ela esta fazendo agora. */
+  /* `min-height:0` E OBRIGATORIO. Item de flex-column nao encolhe abaixo do
+     proprio conteudo por padrao: sem isto o <pre> com codigo longo ESTOURA a
+     moldura do painel em vez de ser cortado. E `font` explicito porque a regra
+     do user-agent `pre{font-family:monospace}` e aplicada direto no elemento e
+     vence a fonte que so chega por heranca do body. */
+  .bancada .cod{flex:1;min-height:0;margin:0;padding:.75em .95em;overflow:hidden;
+    font:500 11px/1.5 "IBM Plex Mono",monospace;color:#e2d6f2;
+    white-space:pre-wrap;word-break:break-word;background:#0a0810}
+  .quadro{position:relative;width:100%;height:100%}
+
+  /* A TELINHA DO MONITOR. O monitor no cenario e um paralelogramo isometrico
+     (medido: cantos 625,216 · 697,190 · 625,288 em coordenadas da cena). A
+     matrix mapeia o iframe retangular exatamente nele, e o container escala
+     junto com o canvas — entao a telinha acompanha qualquer tamanho de tela. */
+  /* ATRAS do canvas (z-index 0 contra 1): quem recorta a telinha e o furo
+     que o canvas abre, entao a moldura do monitor fica por cima sozinha. */
+  #monitor{position:absolute;left:0;top:0;width:720px;height:720px;border:0;
+    transform-origin:0 0;pointer-events:none;background:#0b0f1a;z-index:0}
+  .frame canvas{position:relative;z-index:1}
+  #monitor[hidden]{display:none}
+</style>
+
+<header>
+  <h1>YUNA &amp; JIJI — THE ROOM</h1>
+  <p class="sub">Click anywhere on the floor. She finds the path pixel by pixel through
+     the room's physics — she does not walk in a straight line: she goes around furniture
+     and passes behind anything taller than she is.</p>
+</header>
+
+<div class="cena-viva">
+  <!-- O NAVEGADOR DELA, ao vivo. Fica escondido ate ela sentar no PC. -->
+  <div class="navegador" id="navegador" hidden>
+    <div class="navegador-topo"><i></i><span id="navegador-url">yuna is browsing</span></div>
+    <iframe id="navegador-quadro" title="o navegador da Yuna, ao vivo"
+            allow="clipboard-read; clipboard-write" sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+  <!-- A TELA DO DESENHO, ao vivo. Escondida ate ela sentar no tapete. -->
+  <div class="navegador prancheta" id="prancheta" hidden>
+    <div class="navegador-topo"><i></i><span>yuna is drawing</span></div>
+    <iframe id="prancheta-quadro" title="the drawing, live"
+            sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+  <!-- O CONSOLE DA BANCADA. Aparece quando ela escreve ou roda codigo. -->
+  <div class="navegador bancada" id="bancada" hidden>
+    <div class="navegador-topo"><i></i><span id="bancada-arq">yuna is writing code</span></div>
+    <pre class="cod" id="bancada-cod"></pre>
+  </div>
+  <div class="quadro">
+    <canvas id="tela" width="1376" height="768"></canvas>
+    <!-- A MESMA imagem, na telinha do monitor do quarto. O paralelogramo do
+         monitor foi medido no cenario; a matrix encaixa o retangulo nele. -->
+    <iframe id="monitor" title="a tela do PC dela" hidden
+            sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+</div>
+
+<div class="barra">
+  <div class="grupo">
+    <button id="bDormir">send to bed</button>
+    <button id="bJogar">send to play</button>
+    <button id="bNavegar">send to browse</button>
+    <button id="bPasseio" aria-pressed="true">wander on her own: on</button>
+    <button id="bFisica" aria-pressed="false">show physics</button>
+    <button id="bRota" aria-pressed="false">show path</button>
+  </div>
+  <div class="leitura">
+    <span>pé <b id="lPos">—</b></span>
+    <span>state <b id="lEstado">parada</b></span>
+    <span>frame <b id="lQuadro">—</b></span>
+  </div>
+</div>
+
+<p class="nota">Scenery is 2752×1536, shown at half size. Green in the physics view = where she can step; everything else is wall, solid furniture, or a zone where furniture would cover too much of her.</p>
+
+<script id="dados" type="application/json">__DADOS__</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("dados").textContent);
+const W = D.W, H = D.H, ALT = D.ALT;
+const PASSO = 21, QUADRO_MS = 110, VEL = PASSO * 1000 / QUADRO_MS;
+
+const carregar = src => new Promise(ok => { const i = new Image(); i.onload = () => ok(i); i.src = src; });
+
+function espelhar(c){
+  const o=document.createElement("canvas");o.width=c.width;o.height=c.height;
+  const g=o.getContext("2d");g.translate(o.width,0);g.scale(-1,1);g.drawImage(c,0,0);return o;
+}
+function paraCanvas(im){
+  const c=document.createElement("canvas");c.width=im.width;c.height=im.height;
+  c.getContext("2d").drawImage(im,0,0);return c;
+}
+/* Onde a figura PISA: centro dos pes na faixa de baixo. Ancorar pelo centro da
+   caixa faz ela afundar quando a pose muda de largura. */
+function ancoraDoPe(c){
+  const d=c.getContext("2d").getImageData(0,0,c.width,c.height).data;
+  let fundo=0;
+  for(let y=c.height-1;y>=0;y--){let tem=false;
+    for(let x=0;x<c.width;x++) if(d[(y*c.width+x)*4+3]>40){tem=true;break;}
+    if(tem){fundo=y;break;}}
+  const topo=Math.max(0,Math.round(fundo-c.height*0.08));
+  let soma=0,n=0;
+  for(let y=topo;y<=fundo;y++) for(let x=0;x<c.width;x++)
+    if(d[(y*c.width+x)*4+3]>40){soma+=x;n++;}
+  return {x:n?Math.round(soma/n):c.width>>1,y:fundo};
+}
+
+/* Busca em largura no chao livre: o caminho e PROCURADO, nunca tracado. */
+function acharCaminho(livre,ox,oy,dx,dy){
+  const ok=(x,y)=>x>=0&&x<W&&y>=0&&y<H&&livre[y*W+x];
+  function encaixar(px,py,raio=40){
+    if(ok(px,py))return[px,py];
+    for(let r=1;r<=raio;r++) for(let a=-r;a<=r;a++){
+      if(ok(px+a,py-r))return[px+a,py-r];
+      if(ok(px+a,py+r))return[px+a,py+r];
+      if(ok(px-r,py+a))return[px-r,py+a];
+      if(ok(px+r,py+a))return[px+r,py+a];}
+    return null;
+  }
+  const a=encaixar(ox,oy),b=encaixar(dx,dy);
+  if(!a||!b)return null;
+  const veio=new Int32Array(W*H).fill(-1), fila=new Int32Array(W*H);
+  let ini=0,fim=0;
+  const iA=a[1]*W+a[0], iB=b[1]*W+b[0];
+  veio[iA]=iA; fila[fim++]=iA;
+  const viz=[1,-1,W,-W,W+1,W-1,-W+1,-W-1];
+  while(ini<fim){
+    const p=fila[ini++]; if(p===iB)break;
+    const px=p%W;
+    for(const d of viz){const q=p+d; if(Math.abs(q%W-px)>1)continue;
+      if(q>=0&&q<W*H&&livre[q]&&veio[q]<0){veio[q]=p;fila[fim++]=q;}}
+  }
+  if(veio[iB]<0)return null;
+  const bruto=[];
+  for(let p=iB;;p=veio[p]){bruto.push([p%W,(p/W)|0]); if(p===veio[p])break;}
+  bruto.reverse();
+  const reta=(p,q)=>{const n=(Math.max(Math.abs(q[0]-p[0]),Math.abs(q[1]-p[1]))>>1)+1;
+    for(let i=0;i<=n;i++){const x=Math.round(p[0]+(q[0]-p[0])*i/n),y=Math.round(p[1]+(q[1]-p[1])*i/n);
+      if(!livre[y*W+x])return false;} return true;};
+  const rota=[bruto[0]]; let i=0;
+  while(i<bruto.length-1){let j=bruto.length-1;
+    while(j>i+1&&!reta(bruto[i],bruto[j]))j--;
+    rota.push(bruto[j]); i=j;}
+  return rota;
+}
+
+(async function(){
+  const tela=document.getElementById("tela"), ctx=tela.getContext("2d");
+  ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality="high";
+
+  const cenario=await carregar(D.cenario);
+  const pisoImg=await carregar(D.piso);
+  const mc=document.createElement("canvas"); mc.width=W; mc.height=H;
+  const mg=mc.getContext("2d"); mg.drawImage(pisoImg,0,0);
+  const px4=mg.getImageData(0,0,W,H).data;
+  const livre=new Uint8Array(W*H);
+  for(let i=0;i<W*H;i++) livre[i]=px4[i*4]>0?1:0;
+
+  const fis=document.createElement("canvas"); fis.width=W; fis.height=H;
+  {const g=fis.getContext("2d"), d=g.createImageData(W,H);
+   for(let i=0;i<W*H;i++) if(livre[i]){
+     d.data[i*4]=40; d.data[i*4+1]=220; d.data[i*4+2]=110; d.data[i*4+3]=110;}
+   g.putImageData(d,0,0);}
+
+  const pecas=[];
+  for(const p of D.pecas) pecas.push({n:p.n,x:p.x,y:p.y,b:p.b,img:await carregar(p.d)});
+
+  /* MEDIDO NAS FOLHAS (27/08): os dois ciclos nascem indo pra DIREITA — rosto
+     e bico da bota apontam pra direita. O codigo antigo dizia "nascem pra
+     ESQUERDA" e espelhava por isso: ela andava de costas na horizontal
+     inteira. Aqui o nome do canvas diz a verdade. */
+  const andarDir=(await Promise.all(D.andar.map(carregar))).map(paraCanvas);
+  const andarEsq=andarDir.map(espelhar);
+  const trasDir=(await Promise.all(D.tras.map(carregar))).map(paraCanvas);
+  const trasEsq=trasDir.map(espelhar);
+  const dirs=(await Promise.all(D.dir.map(carregar))).map(paraCanvas);
+  const parada={}; dirs.forEach((c,n)=>{parada["dir-"+(n+1)]=c;});
+  const paradaEsq={};
+  for(const k of ["dir-2","dir-3","dir-4"]) paradaEsq[k]=espelhar(parada[k]);
+
+  /* GESTOS: animacoes DELA que nao envolvem movel nenhum — espreguicar,
+     bocejar, agachar pra fazer carinho no gato. Sao mais baratos e mais
+     seguros que uma estacao: como nao ha retalho de cenario, nao existe
+     problema de registro nem de oclusao; entram no lugar do sprite parado e
+     a profundidade normal cuida do resto. */
+  const gestos={};
+  for(const [nome,lista] of Object.entries(D.gestos||{}))
+    gestos[nome]=(await Promise.all(lista.map(carregar))).map(paraCanvas);
+
+  /* JIJI, o gato do Michel: cinza, gordinho. Ele vive em PARALELO a ela —
+     tem rota propria, senta, se espreguica e vai dormir na casinha. Os
+     sprites do ciclo de andar nascem virados pra DIREITA (mesma convencao
+     dos dela), entao andar pra esquerda e o espelho. */
+  /* CHAO DO GATO: o piso dela deixa passar POR CIMA das coisas rasteiras
+     (roupa no chao, tenis, 3DS, halteres) — pra uma pessoa isso e natural,
+     pra um gato de 20 cm de altura fica parecendo que ele anda no ar. Entao
+     ele tem a propria malha: o piso dela MENOS essas pecas. O tapete
+     continua valendo, que e chao de verdade. */
+  const RASTEIRAS=["roupas_rosa","tenis","n3ds","pesinhos","lixeira",
+                   "caixa_pequena","caixa_aberta","caixa_fechada"];
+  const livreGato=Uint8Array.from(livre);
+  {
+    const cg=document.createElement("canvas"); cg.width=W; cg.height=H;
+    const g=cg.getContext("2d");
+    let n=0;
+    for(const m of pecas) if(RASTEIRAS.includes(m.n)){ g.drawImage(m.img,m.x,m.y); n++; }
+    const px=g.getImageData(0,0,W,H).data;
+    let tirados=0;
+    for(let i=0;i<W*H;i++) if(px[i*4+3]>40 && livreGato[i]){ livreGato[i]=0; tirados++; }
+
+    /* A COZINHA E PROIBIDA. Ele anda pela casa toda menos ali. */
+    if(D.proibido_gato&&D.proibido_gato.length>2){
+      g.setTransform(1,0,0,1,0,0);
+      g.globalCompositeOperation="source-over";
+      g.clearRect(0,0,W,H);
+      g.fillStyle="#fff";
+      g.beginPath();
+      g.moveTo(D.proibido_gato[0][0],D.proibido_gato[0][1]);
+      for(const [x,y] of D.proibido_gato.slice(1)) g.lineTo(x,y);
+      g.closePath(); g.fill();
+      const pc=g.getImageData(0,0,W,H).data;
+      let coz=0;
+      for(let i=0;i<W*H;i++) if(pc[i*4+3]>40 && livreGato[i]){ livreGato[i]=0; coz++; }
+      console.log("cozinha fechada pro gato: "+coz+" px");
+    }
+
+    /* SO A MAIOR ILHA. Fechar a cozinha deixa cantinhos soltos entre o
+       poligono e os moveis; se ele sorteasse um destino la dentro nunca
+       chegaria, e ficaria tentando a toa. */
+    {
+      const vis=new Uint8Array(W*H); let inicio=-1;
+      for(let i=0;i<W*H;i++) if(livreGato[i]){ inicio=i; break; }
+      if(inicio>=0){
+        const fila=new Int32Array(W*H); let a=0,b=0;
+        fila[b++]=inicio; vis[inicio]=1;
+        while(a<b){
+          const i=fila[a++], x=i%W, y=(i/W)|0;
+          if(x>0   && livreGato[i-1] && !vis[i-1]){ vis[i-1]=1; fila[b++]=i-1; }
+          if(x<W-1 && livreGato[i+1] && !vis[i+1]){ vis[i+1]=1; fila[b++]=i+1; }
+          if(y>0   && livreGato[i-W] && !vis[i-W]){ vis[i-W]=1; fila[b++]=i-W; }
+          if(y<H-1 && livreGato[i+W] && !vis[i+W]){ vis[i+W]=1; fila[b++]=i+W; }
+        }
+        let presos=0;
+        for(let i=0;i<W*H;i++) if(livreGato[i]&&!vis[i]){ livreGato[i]=0; presos++; }
+        if(presos) console.log("ilhas soltas descartadas: "+presos+" px");
+      }
+    }
+    console.log("chao do gato: "+n+" pecas rasteiras removidas, "+tirados+" px");
+  }
+
+  let jiji=null;
+  if(D.jiji){
+    const jc={};
+    for(const k of ["sentado","andar1","andar2","andar3","andar4",
+                    "dormindo","espreguica","deitado"]) jc[k]=paraCanvas(await carregar(D.jiji[k]));
+    /* ciclos novos entram se a arte existir — o pacote pode nao ter */
+    const ciclo=async pre=>{
+      const l=[];
+      for(let i=1;i<=4;i++){
+        const k=pre+i;
+        if(!D.jiji[k]) return null;
+        l.push(paraCanvas(await carregar(D.jiji[k])));
+      }
+      return l;
+    };
+    const limpando=await ciclo("limpar"), brincando=await ciclo("brincar");
+    jiji={
+      poses:jc,
+      ciclos:{limpando:limpando, brincando:brincando},
+      andarDir:[jc.andar1,jc.andar2,jc.andar3,jc.andar4],
+      andarEsq:[jc.andar1,jc.andar2,jc.andar3,jc.andar4].map(espelhar),
+      casa:D.jiji.casa,
+      x:D.jiji.casa?D.jiji.casa[0]:W/2, y:D.jiji.casa?D.jiji.casa[1]:H/2,
+      rota:[], trecho:0, dist:0, olhaDir:1,
+      estado:"dormindo", desde:0, ate:6000
+    };
+  }
+
+  const anc=new Map();
+  for(const c of [...andarEsq,...andarDir,...trasEsq,...trasDir,
+                  ...Object.values(parada),...Object.values(paradaEsq),
+                  ...Object.values(gestos).flat()]) anc.set(c,ancoraDoPe(c));
+
+  /* ESTACOES — lugares onde ela nao fica DO LADO do movel, ela entra nele.
+     Dormir nao e "ela em pe perto da cama": e a CAMA COM ELA DENTRO. Por
+     isso a estacao troca o sprite da peca por quadros proprios e para de
+     desenhar o corpo dela. Registro perfeito de graca: os quadros sao a
+     mesma cama redesenhada, mesma caixa, mesma ancora. */
+  const estacoes={};
+  for(const [nome,e] of Object.entries(D.estacoes||{})){
+    const carregarFases=async l=>Promise.all((l||[]).map(async f=>({...f,img:await carregar(f.d)})));
+    estacoes[nome]={...e,
+      quadros:await Promise.all(e.quadros.map(carregar)),
+      entrada:await carregarFases(e.entrada),
+      saida:await carregarFases(e.saida),
+      esconder:await carregarFases(e.esconder)};
+  }
+
+  /* SILHUETA DELA DENTRO DO RETALHO.
+     O retalho da estacao e opaco: e o cenario com ela composta em cima. Logo
+     nao da pra usar o retalho como oclusor (tapa meia sala) nem pra saber
+     onde ela esta. Mas os pixels em que o retalho DIFERE do cenario sao
+     exatamente o que a estacao acrescentou — ela, e o movel redesenhado.
+     Comparando os dois eu ganho a silhueta dela de graca. E ela e necessaria:
+     ela e mais alta que o sofa, a cabeca sobe acima do encosto, e nessa
+     faixa nenhuma peca protegia — era ali que o gato passava por cima dela. */
+  {
+    const cvC=document.createElement("canvas"); cvC.width=W; cvC.height=H;
+    const gC=cvC.getContext("2d"); gC.imageSmoothingEnabled=false;
+    gC.drawImage(cenario,0,0);
+    for(const [nome,e] of Object.entries(estacoes)){
+      const todos=[...e.quadros,
+                   ...(e.entrada||[]).map(f=>f.img),
+                   ...(e.saida||[]).map(f=>f.img)].filter(Boolean);
+      if(!todos.length) continue;
+      const w=todos[0].width, h=todos[0].height, ox=e.pos[0], oy=e.pos[1];
+      const fundo=gC.getImageData(ox,oy,w,h).data;
+      const cvQ=document.createElement("canvas"); cvQ.width=w; cvQ.height=h;
+      const gQ=cvQ.getContext("2d"); gQ.imageSmoothingEnabled=false;
+      const uniao=new Uint8Array(w*h);
+      for(const q of todos){
+        gQ.clearRect(0,0,w,h); gQ.drawImage(q,0,0);
+        const px=gQ.getImageData(0,0,w,h).data;
+        for(let i=0;i<w*h;i++){
+          if(uniao[i]) continue;
+          const j=i*4;
+          /* limiar alto de proposito: o retalho do sofa leva o brilho da TV,
+             que muda DE LEVE a cor do frame inteiro. Com limiar baixo a
+             "silhueta dela" virava o retalho todo salpicado, e o gato ganhava
+             buracos ao passar perto. */
+          if(Math.abs(px[j]-fundo[j])>45||Math.abs(px[j+1]-fundo[j+1])>45||
+             Math.abs(px[j+2]-fundo[j+2])>45) uniao[i]=1;
+        }
+      }
+      /* e o que sobrou de salpico vai embora aqui: so ficam manchas grandes,
+         que e ela e o que a estacao acrescentou de verdade */
+      {
+        const lab=new Int32Array(w*h), pai=[0];
+        const acha=a=>{ while(pai[a]!==a){ pai[a]=pai[pai[a]]; a=pai[a]; } return a; };
+        const une=(a,b)=>{ a=acha(a); b=acha(b); if(a!==b) pai[Math.max(a,b)]=Math.min(a,b); };
+        for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+          const i=y*w+x; if(!uniao[i]) continue;
+          const c=x>0?lab[i-1]:0, u=y>0?lab[i-w]:0;
+          if(c&&u){ lab[i]=Math.min(c,u); une(c,u); }
+          else if(c||u) lab[i]=c||u;
+          else { pai.push(pai.length); lab[i]=pai.length-1; }
+        }
+        const cont=new Int32Array(pai.length);
+        for(let i=0;i<w*h;i++) if(lab[i]) cont[acha(lab[i])]++;
+        /* CORTE RELATIVO A MAIOR MANCHA, nao um numero fixo.
+           O corte fixo de 300px deixava passar cacos grandes: nos pesinhos a
+           silhueta ia de x=378 a 796 (418px de largura) pra uma figura agachada
+           de ~100. O gato cruzava e era recortado por reflexo e sombra — "fica
+           bugado e sumindo". Ela e o movel sao a mancha GRANDE; o resto e
+           migalha ao lado disso. */
+        let maior=0;
+        for(let k=1;k<cont.length;k++) if(cont[k]>maior) maior=cont[k];
+        const corte=Math.max(300, Math.round(maior*0.12));
+        for(let i=0;i<w*h;i++) if(lab[i] && cont[acha(lab[i])]<corte) uniao[i]=0;
+      }
+      const cvM=document.createElement("canvas"); cvM.width=w; cvM.height=h;
+      const gM=cvM.getContext("2d");
+      const saida=gM.createImageData(w,h);
+      let n=0;
+      for(let i=0;i<w*h;i++) if(uniao[i]){ saida.data[i*4+3]=255; n++; }
+      gM.putImageData(saida,0,0);
+      /* A ALTURA REAL DA MANCHA (nao a do canvas, que e o retalho inteiro).
+         E ela que diz se o movel e alto ou rasteiro, e disso sai a folga de
+         profundidade do gato — ver o desenho do gato mais abaixo. */
+      let sy0 = h, sy1 = -1;
+      for(let y=0;y<h;y++) for(let x=0;x<w;x++)
+        if(uniao[y*w+x]){ if(y<sy0) sy0=y; if(y>sy1) sy1=y; break; }
+      /* A BASE POR COLUNA: pra cada x, o y mais BAIXO que a silhueta ocupa —
+         a linha do chao dela naquela coluna. E o que permite responder "o gato
+         esta atras?" no ponto onde o gato realmente esta, em vez de comparar
+         tudo com o pe dela, que fica em outra coluna. -1 = ela nao ocupa nada
+         ali, entao nao ha o que ocultar. */
+      const baseCol = new Int16Array(w).fill(-1);
+      for(let x=0;x<w;x++)
+        for(let y=h-1;y>=0;y--)
+          if(uniao[y*w+x]){ baseCol[x]=oy+y; break; }
+      e.silhueta={img:cvM,x:ox,y:oy,altura:Math.max(1, sy1-sy0),
+                  baseCol, x0:ox, larg:w, pe:e.base};
+      /* PERFIL DE TOPO: pra cada coluna, a primeira linha em que a estacao
+         desenhou alguma coisa. E o que diz onde esta a CABECA dela — usar a
+         altura media (0,80 x ALT) punha o balao dentro dela em toda estacao:
+         sentada na cama ela ocupa 1,9x isso, na cozinha 2,5x. */
+      const topo=new Int16Array(w).fill(-1);
+      for(let x=0;x<w;x++)
+        for(let y=0;y<h;y++)
+          if(uniao[y*w+x]){ topo[x]=oy+y; break; }
+      e.topoPorColuna={x0:ox, larg:w, topo};
+      console.log("silhueta "+nome+": "+n+" px");
+    }
+  }
+
+  const yuna={x:Math.round(1300/D.K),y:Math.round(1050/D.K),rota:[],trecho:0,andado:0,dist:0,
+               olhando:{dx:0,dy:1},marca:null,
+               estacao:null,      // nome da estacao em uso
+               destinoDepois:null,// clique que espera ela acordar
+               indoPara:null,     // estacao alvo enquanto caminha
+               desde:0};          // quando entrou na estacao
+  let verFisica=false, verRota=false, passeio=true;
+  const lPos=document.getElementById("lPos"), lEstado=document.getElementById("lEstado"),
+        lQuadro=document.getElementById("lQuadro");
+
+  /* A saida tem suas proprias fases (espreguicar, sair da cama). Chamar
+     sair() no meio delas atropela; entao sair() so ENGATILHA a saida, e quem
+     termina de verdade e acabarEstacao(). */
+  function sair(imediato){
+    if(!yuna.estacao) return;
+    const e=estacoes[yuna.estacao];
+    if(!imediato && e.saida && e.saida.length && yuna.fase!=="saida"){
+      yuna.fase="saida"; yuna.faseIdx=0; yuna.faseDesde=performance.now();
+      return;
+    }
+    acabarEstacao();
+  }
+  function acabarEstacao(){
+    if(!yuna.estacao) return;
+    const e=estacoes[yuna.estacao];
+    yuna.x=e.aproximar[0]; yuna.y=e.aproximar[1];
+    if(e.olhar) yuna.olhando={dx:e.olhar[0],dy:e.olhar[1]};   // sai olhando igual
+    yuna.estacao=null; yuna.fase=null;
+    if(yuna.destinoDepois){                 // clique que ficou na fila
+      const [px,py,alvo]=yuna.destinoDepois;
+      yuna.destinoDepois=null;
+      irPara(px,py,alvo);
+    }
+  }
+
+  function irPara(px,py,alvo){
+    yuna.gesto=null;          // qualquer destino interrompe o gesto na hora
+    /* Se ela esta na cama, PRIMEIRO ela acorda (a sequencia inteira) e so
+       depois anda. Sem isso o clique comecava a rota na hora: ela andava
+       invisivel enquanto a cama ainda desenhava a cena de acordar, e no fim
+       acabarEstacao jogava a posicao dela de volta pro pe da cama. */
+    if(yuna.estacao){
+      yuna.destinoDepois=[px,py,alvo||null];
+      yuna.marca={x:px,y:py,cor:"#c08ae8",t:0};
+      sair();
+      return true;
+    }
+    const r=acharCaminho(livre,Math.round(yuna.x),Math.round(yuna.y),px,py);
+    if(!r||r.length<2){yuna.marca={x:px,y:py,cor:"#e05252",t:0};return false;}
+    yuna.rota=r; yuna.trecho=0; yuna.andado=0; yuna.dist=0;
+    yuna.indoPara=alvo||null;
+    yuna.marca={x:r[r.length-1][0],y:r[r.length-1][1],cor:alvo?"#c08ae8":"#7fd0a0",t:0};
+    return true;
+  }
+
+  function usar(nome){                   // manda ela ate a estacao e entrar
+    const e=estacoes[nome];
+    if(!e) return false;
+    if(yuna.estacao===nome) return true;   // ja esta la
+    return irPara(e.aproximar[0],e.aproximar[1],nome);
+  }
+
+  /* Clicar EM CIMA da peca de uma estacao = usar a estacao. O teste e no alfa
+     do sprite, nao na caixa: clicar no vao ao lado da cama e chao, nao cama. */
+  function estacaoNoPonto(px,py){
+    for(const [nome,e] of Object.entries(estacoes)){
+      const q=e.quadros[0];
+      const x=px-e.pos[0], y=py-e.pos[1];
+      if(x<0||y<0||x>=q.width||y>=q.height) continue;
+      const c=document.createElement("canvas");
+      c.width=1; c.height=1;
+      c.getContext("2d").drawImage(q,-x,-y);
+      if(c.getContext("2d").getImageData(0,0,1,1).data[3]>40) return nome;
+    }
+    return null;
+  }
+
+  /* CLIQUE NO CHAO: REMOVIDO (31/08/2026).
+     Servia pra testar a fisica do quarto enquanto ela nao tinha motor: clicar
+     mandava ela andar ou usar um movel. Agora ela decide sozinha o dia inteiro,
+     e um clique de espectador podendo puxar a personagem pra outro lugar no
+     meio de uma compra e um jeito de quebrar a live sem querer.
+     Quem manda nela e o motor. A tela so mostra.
+     (o cursor de "crosshair" tambem sai: nao ha mais nada pra mirar) */
+  tela.style.cursor = "default";
+
+  function alterna(id,estado,rotulo){
+    const b=document.getElementById(id);
+    b.setAttribute("aria-pressed",String(estado));
+    b.textContent=rotulo;
+  }
+  document.getElementById("bDormir").onclick=()=>{
+    if(yuna.estacao==="cama") sair(); else usar("cama");};
+  document.getElementById("bJogar").onclick=()=>{
+    if(yuna.estacao==="puff") sair(); else usar("puff");};
+  document.getElementById("bNavegar").onclick=()=>{
+    if(yuna.estacao==="mesa") sair(); else usar("mesa");};
+  document.getElementById("bPasseio").onclick=()=>{
+    passeio=!passeio; alterna("bPasseio",passeio,"wander on her own: "+(passeio?"on":"off"));};
+  document.getElementById("bFisica").onclick=()=>{
+    verFisica=!verFisica; alterna("bFisica",verFisica,verFisica?"hide physics":"show physics");};
+  document.getElementById("bRota").onclick=()=>{
+    verRota=!verRota; alterna("bRota",verRota,verRota?"hide path":"show path");};
+
+  let paradaDesde=performance.now(), antes=paradaDesde;
+  yuna.gesto=null;
+  function passeioSozinha(agora){
+    /* nem toda parada termina em caminhada: as vezes ela para e ACENA pra
+       quem esta assistindo. Sem isso o quarto vira vaivem de estacao em
+       estacao, e numa live 24 horas ninguem sente que foi visto. */
+    /* `desenhar` NAO E FLOREIO — e trabalho, e so acontece quando o motor
+       manda ela pro tapete. Sem tirar do sorteio ela sentava pra desenhar de
+       pe no meio do quarto, sem tapete, sem tablet na cena e sem obra. */
+    const nomes=Object.keys(gestos).filter(n => n !== "desenhar");
+    if(nomes.length && Math.random()<0.30){
+      const g=nomes[(Math.random()*nomes.length)|0];
+      /* Acenar e para QUEM ESTA ASSISTINDO: ela tem que estar de frente antes
+         de comecar, senao o gesto (desenhado de frente) entra e sai cortando
+         contra um sprite lateral. Virar aqui deixa a entrada e a saida limpas. */
+      yuna.olhando={dx:0,dy:1};
+      /* tem que ser o relogio DO QUADRO. Com performance.now() o inicio do
+         gesto ficava a frente do timestamp do frame em curso, o indice dava
+         -1, e em JS (-1 % 6) e -1 e nao 5: o sprite virava undefined, a
+         ancora estourava e o laco inteiro morria — ela sumia da tela. */
+      yuna.gesto={n:g, desde:agora};
+      return;
+    }
+    for(let t=0;t<60;t++){
+      const i=(Math.random()*W*H)|0;
+      if(livre[i]&&irPara(i%W,(i/W)|0))return;
+    }
+  }
+
+  /* O GATO. Maquina simples: ele fica um tempo numa pose, depois escolhe um
+     destino no chao e anda ate la. De vez em quando volta pra casinha e
+     dorme um tempo longo. Nada disso depende dela — sao dois bichos vivendo
+     no mesmo quarto. */
+  const VEL_GATO=PASSO*0.46*1000/QUADRO_MS;   // ele anda mais devagar que ela
+  function gatoVaiPara(px,py){
+    const r=acharCaminho(livreGato,Math.round(jiji.x),Math.round(jiji.y),px,py);
+    if(!r||r.length<2) return false;
+    jiji.rota=r; jiji.trecho=0; jiji.dist=0; jiji.estado="andando";
+    return true;
+  }
+  /* Um chao livre perto de um ponto — pra ele conseguir sentar do lado dela
+     sem tentar entrar dentro do movel. */
+  function pertoDe(px,py,raio){
+    for(let t=0;t<80;t++){
+      const a=Math.random()*Math.PI*2, d=40+Math.random()*raio;
+      const x=Math.round(px+Math.cos(a)*d), y=Math.round(py+Math.sin(a)*d*0.6);
+      if(x<2||y<2||x>=W-2||y>=H-2) continue;
+      if(livreGato[y*W+x]) return [x,y];
+    }
+    return null;
+  }
+  function gatoDecide(agora){
+    const r=Math.random();
+    if(jiji.casa && r<0.28){                        // vai dormir em casa
+      if(gatoVaiPara(jiji.casa[0],jiji.casa[1])){ jiji.aoChegar="dormindo"; return; }
+    }
+    /* GATO PROCURA COMPANHIA. Se ela esta parada em algum movel, de vez em
+       quando ele larga o que esta fazendo e vai deitar do lado. */
+    if(r<0.46 && yuna.estacao){
+      const alvo=pertoDe(yuna.x,yuna.y,110);
+      if(alvo && gatoVaiPara(alvo[0],alvo[1])){
+        jiji.aoChegar=Math.random()<0.55?"deitado":"sentado";
+        return;
+      }
+    }
+    if(r<0.62){                                     // passeia
+      for(let t=0;t<60;t++){
+        const i=(Math.random()*W*H)|0;
+        if(livreGato[i] && gatoVaiPara(i%W,(i/W)|0)){
+          jiji.aoChegar=Math.random()<0.5?"sentado":"deitado";
+          return;
+        }
+      }
+    }
+    // fica onde esta, mudando de pose
+    const poses=["sentado","deitado","espreguica"];
+    for(const c in jiji.ciclos) if(jiji.ciclos[c]) poses.push(c,c);  // peso 2
+    jiji.estado=poses[(Math.random()*poses.length)|0];
+    jiji.desde=agora;
+    jiji.ate=jiji.estado==="espreguica"?1600
+            :jiji.estado==="limpando"?5200+Math.random()*3600
+            :jiji.estado==="brincando"?3200+Math.random()*2400
+            :4000+Math.random()*6000;
+  }
+  function passoDoGato(agora,dt){
+    if(!jiji.desde) jiji.desde=agora;
+    if(jiji.estado==="andando"){
+      /* arranque e freada: nos primeiros e nos ultimos 24 px da rota ele vai
+         mais devagar, em vez de sair e parar de uma vez */
+      let total=0;
+      for(let i=0;i<jiji.rota.length-1;i++)
+        total+=Math.hypot(jiji.rota[i+1][0]-jiji.rota[i][0],jiji.rota[i+1][1]-jiji.rota[i][1]);
+      const falta_total=Math.max(0,total-jiji.dist);
+      const suave=Math.min(1,Math.min(jiji.dist,falta_total)/24+0.35);
+      let sobra=VEL_GATO*suave*dt;
+      while(sobra>0&&jiji.trecho<jiji.rota.length-1){
+        const a0=jiji.rota[jiji.trecho], b0=jiji.rota[jiji.trecho+1];
+        const dx=b0[0]-a0[0], dy=b0[1]-a0[1], comp=Math.hypot(dx,dy)||1;
+        const falta=comp-(jiji.andado||0);
+        const anda=Math.min(sobra,falta);
+        jiji.andado=(jiji.andado||0)+anda; jiji.dist+=anda; sobra-=anda;
+        jiji.x=a0[0]+dx*(jiji.andado/comp); jiji.y=a0[1]+dy*(jiji.andado/comp);
+        if(Math.abs(dx)>0.5) jiji.olhaDir=dx>0?1:-1;
+        if(jiji.andado>=comp-0.001){ jiji.trecho++; jiji.andado=0; }
+      }
+      if(jiji.trecho>=jiji.rota.length-1){
+        jiji.rota=[]; jiji.estado=jiji.aoChegar||"sentado"; jiji.aoChegar=null;
+        jiji.desde=agora;
+        jiji.ate=jiji.estado==="dormindo"?18000+Math.random()*15000:4000+Math.random()*6000;
+      }
+    } else if(agora-jiji.desde>jiji.ate){
+      gatoDecide(agora);
+    }
+    /* NAO desenha aqui: devolve o sprite. Quem desenha e o quadro, na ordem
+       certa de profundidade — o gato tem o PE DELE, nao o dela, e usar o pe
+       dela fazia as pecas taparem o gato no meio do quarto (ele "apagava"). */
+    if(jiji.estado==="andando"){
+      /* CICLO DE VERDADE (v60): os 4 quadros agora sao contato / passagem /
+         contato espelhado / passagem, com passada larga. O sobe-e-desce vem
+         da PROPRIA ARTE — os quadros de contato sao mais baixos que os de
+         passagem e o motor alinha pela BASE das patas, entao o corpo sobe e
+         desce sozinho. O balanco artificial de 1 px saiu: era remendo pra
+         disfarcar quadros quase identicos. */
+      const fase=jiji.dist/(PASSO*0.95);
+      jiji.bob=0;
+      return (jiji.olhaDir>0?jiji.andarDir:jiji.andarEsq)[Math.floor(fase)%4];
+    }
+    /* RESPIRACAO. Um pixel pra cima, um pra baixo, lento. Deliberadamente
+       por DESLOCAMENTO e nao por escala: mexer no tamanho dele foi exatamente
+       a reclamacao de antes ("as vezes aumenta e diminui"). */
+    const ritmo=jiji.estado==="dormindo"?2600:1900;
+    jiji.bob=Math.sin(agora/ritmo*Math.PI*2)>0?-1:0;
+    const c=jiji.ciclos&&jiji.ciclos[jiji.estado];
+    if(c){
+      /* vai e VOLTA (1,2,3,4,3,2): a lambida fecha no proprio movimento em
+         vez de dar um pulo do ultimo frame pro primeiro */
+      const MS=jiji.estado==="brincando"?150:260;
+      const v=[0,1,2,3,2,1];
+      jiji.bob=0;
+      return c[v[Math.floor((agora-jiji.desde)/MS)%v.length]];
+    }
+    return jiji.poses[jiji.estado]||jiji.poses.sentado;
+  }
+  /* RECORTE DO GATO. Nas estacoes nao da pra desenhar movel por cima do
+     gato: o retalho e opaco e tapa ela (ja quebrou tudo antes). Entao o
+     movel nao vem por cima — quem cede e o GATO: o sprite dele e desenhado
+     num canvas a parte e os pixels que caem dentro da silhueta do movel sao
+     APAGADOS. Resultado igual ao de passar atras, sem tocar no retalho. */
+  const cvGato=document.createElement("canvas"), ctxGato=cvGato.getContext("2d");
+  function desenharGato(sp,oclusores){
+    if(!sp) return;
+    const gx=Math.round(jiji.x-sp.width/2), gy=Math.round(jiji.y-sp.height+(jiji.bob||0));
+    if(!oclusores||!oclusores.length){ ctx.drawImage(sp,gx,gy); return; }
+    if(cvGato.width!==sp.width||cvGato.height!==sp.height){
+      cvGato.width=sp.width; cvGato.height=sp.height;
+    }
+    ctxGato.clearRect(0,0,sp.width,sp.height);
+    ctxGato.imageSmoothingEnabled=false;
+    ctxGato.globalCompositeOperation="source-over";
+    ctxGato.drawImage(sp,0,0);
+    ctxGato.globalCompositeOperation="destination-out";
+    /* COLUNA POR COLUNA, nao tudo-ou-nada.
+       Tentei os dois extremos e os dois estao errados quando eles estao lado a
+       lado: recortar tudo faz o gato sumir; nao recortar faz ele passar por
+       cima dela. Em isometrico a resposta e local — na coluna onde ELA pisa
+       mais a frente, ela cobre; na coluna ao lado, o gato passa limpo.
+       `baseCol` diz, pra cada x, a linha do chao dela ali. Oclusor sem baseCol
+       (as pecas do cenario) continua recortando inteiro, como sempre. */
+    const peG = Math.round(jiji.y);
+    for(const m of oclusores){
+      if(!m.baseCol){ ctxGato.drawImage(m.img,m.x-gx,m.y-gy); continue; }
+      /* O PE REAL DELA decide a profundidade, nao a base tirada da mascara.
+         Medido: nos pesinhos o pe e 662 e a mascara dava 623-652 — ate 39px
+         acima, porque os sapatos sao pretos sobre piso escuro e nao passam do
+         limiar de cor. Comparar com essa linha falsa apagava o gato em faixas
+         onde ele devia aparecer.
+         A mascara continua respondendo bem a outra pergunta: ELA OCUPA esta
+         coluna? E so isso que se pergunta a ela. */
+      if(m.pe <= peG) continue;                    // ela esta atras do gato: nao cobre
+      for(let x=0; x<sp.width; x++){
+        const col = (gx + x) - m.x0;
+        if(col < 0 || col >= m.larg) continue;
+        if(m.baseCol[col] < 0) continue;           // ela nao ocupa esta coluna
+        ctxGato.drawImage(m.img, col, 0, 1, m.img.height,
+                          x, m.y - gy, 1, m.img.height);
+      }
+    }
+    ctxGato.globalCompositeOperation="source-over";
+    ctx.drawImage(cvGato,gx,gy);
+  }
+
+  /* ======================= O BALAO DE FALA ==============================
+     Direcao Lo-fi (escolhida em 30/08/2026): SO A FALA. Pensamento e sonho
+     ficam no site, nao na tela — numa live de 24 horas, balao que aparece
+     sempre vira papel de parede, e o que sobra nao e lido por ninguem.
+
+     Desenhado no CANVAS, nao em HTML por cima: assim ele sai inteiro na
+     captura do OBS e acompanha o pixel art (mesma fonte, mesma escala,
+     mesma nitidez) em vez de flutuar numa camada com outra resolucao.
+
+     A fala e COLADA NA ACAO — e o `remark` do motor, uma linha dita em voz
+     alta enquanto ela faz. Quando o engine estiver ligado, ele chama
+     window.yunaFala(texto); ate la, as falas de exemplo abaixo entram quando
+     ela chega numa estacao, que e exatamente o momento em que a de verdade
+     vai entrar. */
+  let fala = null;
+  /* DURACAO DO BALAO. Era 9s no maximo, e o turno dela leva quase um minuto:
+     o balao aparecia por 9 segundos a cada 50 e o Michel simplesmente nao via
+     nenhum. Numa live de 24h a fala dela E o conteudo — quem chega no meio tem
+     que pegar alguma coisa escrita na tela. */
+  const FALA_MIN = 8000, FALA_POR_CHAR = 110, FALA_MAX = 26000;
+  function dizer(texto){
+    const t = String(texto || "").trim();
+    if(!t) return;
+    /* `desde: null` de proposito: quem carimba e o primeiro DESENHO, com o
+       relogio do laco. performance.now() e o timestamp do requestAnimationFrame
+       ja vieram desencontrados neste projeto (foi assim que ela sumiu da tela
+       na v76) e um t negativo aqui apagaria o balao inteiro. */
+    fala = { texto: t.slice(0, 180), desde: null };
+    fala.dur = Math.min(FALA_MAX, Math.max(FALA_MIN, fala.texto.length * FALA_POR_CHAR));
+  }
+  window.yunaFala = dizer;      // a porta por onde o motor vai falar
+
+  /* Falas de exemplo, uma por estacao. Some quando o engine assumir. */
+  const FALAS = {
+    mesa:     ["checking the dev wallet before I answer that one in chat",
+               "if the thesis needs three paragraphs it is not a thesis",
+               "redrawing this hand for the fourth time. the fourth time is where it starts working",
+               "the fan curve is wrong again. I can hear it thinking"],
+    cafe:     ["coffee, then the chart. never the other way around",
+               "nothing in the room is urgent. that is the whole trick"],
+    sofa:     ["two more episodes and then I look at the wallet. two.",
+               "somebody in chat called this bottom four times today",
+               "this arc had a plan. you can tell by episode three"],
+    pesinhos: ["rent is paid. this is the part that is only mine",
+               "twelve more and then I look at the wallet"],
+    puff:     ["reading the mint, not the vibes",
+               "he sits with me when I stop working. every time",
+               "died to the same boss six times. learned something on the fifth"],
+    cama:     ["the house bill posts in the morning either way",
+               "goodnight to whoever is still here at this hour"],
+  };
+  function falarDaEstacao(nome){
+    const l = FALAS[nome];
+    if(l && l.length) dizer(l[(Math.random() * l.length) | 0]);
+  }
+
+  function quebrar(txt, larguraMax){
+    const palavras = txt.split(/\s+/);
+    const linhas = []; let atual = "";
+    for(const p of palavras){
+      const tenta = atual ? atual + " " + p : p;
+      if(ctx.measureText(tenta).width > larguraMax && atual){ linhas.push(atual); atual = p; }
+      else atual = tenta;
+    }
+    if(atual) linhas.push(atual);
+    return linhas.slice(0, 4);
+  }
+
+/* ==================== O DIALOGO COM O FABLE ==========================
+     Ela vem ate a caixa, fala com o robozinho do Claude, e a conversa
+     acontece na frente de todo mundo: a pergunta dela em cima da cabeca
+     dela, a resposta em cima do robo.
+
+     NAO REUSA desenharFala. Aquela funcao guarda estado num `fala` global e
+     escreve nele; chamada duas vezes no mesmo quadro, a segunda come a
+     primeira e o balao pisca. Esta e pura: recebe texto e ancora, desenha, e
+     nao lembra de nada.
+
+     A DIRECAO SEGUE A GEOMETRIA, nao um lado fixo: ela esta a ESQUERDA do
+     robo, entao o balao dela cresce pra esquerda e o dele pra direita. Assim
+     nenhum dos dois cobre o outro nem tapa a caixa.
+     ==================================================================== */
+  const ROBO = { x: 878, y: 273, w: 27 };      // o robo em coordenadas da tela
+
+  function balaoEm(texto, ancoraX, topoY, paraEsquerda, ap){
+    /* CORTA ANTES DE MEDIR. `pergunta` vem cortada em 600 pelo motor, mas
+       `resposta` NAO tem corte nenhum e pode chegar com milhares de
+       caracteres — e `quebrar()` percorre TODAS as palavras a cada quadro,
+       a 60 por segundo, pra jogar fora tudo depois da quarta linha. */
+    let txt = String(texto || "").trim();
+    if(txt.length > 260) txt = txt.slice(0, 259).replace(/\s+\S*$/, "") + "…";
+    if(!txt || ap <= 0.01) return;
+    const cor = Math.round(ALT * 0.085);
+    ctx.save();
+    ctx.font = cor + "px 'Silkscreen','IBM Plex Mono',monospace";
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";                      // desenharFala nunca seta: nao herdo sujeira
+    const larguraMax = Math.min(W * 0.26, ALT * 2.0);
+    const linhas = quebrar(txt, larguraMax);     // fonte JA setada: quebrar mede com ela
+    const alturaLinha = Math.round(cor * 1.7);
+    const pad = Math.round(cor * 0.8);
+    const larg = Math.max.apply(null, linhas.map((l) => ctx.measureText(l).width)) + pad * 2;
+    const alt = linhas.length * alturaLinha + pad * 2 - Math.round(cor * 0.3);
+    const cauda = Math.round(cor * 0.45);
+    let bx = paraEsquerda ? Math.round(ancoraX - larg + cauda * 2) : Math.round(ancoraX - cauda * 2);
+    bx = Math.max(6, Math.min(W - larg - 6, bx));
+    const by = Math.max(6, Math.round(topoY - cauda - alt));
+    const pontaX = Math.max(bx + cauda * 2, Math.min(bx + larg - cauda * 2, Math.round(ancoraX)));
+
+    ctx.globalAlpha = ap;
+    ctx.fillStyle = "rgba(10,6,16,.38)";
+    ctx.beginPath(); ctx.roundRect(bx + 2, by + 3, larg, alt, Math.round(cor * 0.9)); ctx.fill();
+    ctx.fillStyle = "#fdfaff";
+    ctx.beginPath(); ctx.roundRect(bx, by, larg, alt, Math.round(cor * 0.9)); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(pontaX - cauda, by + alt - 1);
+    ctx.lineTo(pontaX, by + alt + cauda);
+    ctx.lineTo(pontaX + cauda, by + alt - 1);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#2a2137";
+    linhas.forEach((l, i) => ctx.fillText(l, bx + pad, by + pad + i * alturaLinha));
+    ctx.restore();
+  }
+
+  function desenharDialogo(agora){
+    const d = motor.dados;
+    if(!d || !d.agents) return;
+    const a = d.agents.yuna || d.agents[Object.keys(d.agents)[0]];
+    if(!a || !a.cena || a.cena.movel !== "caixa") return;
+    const cs = d.consultas || [];
+    const c = cs[cs.length - 1];
+    if(!c) return;
+    /* Entra em 400ms depois que ela CHEGA — nao quando o motor manda. Ela leva
+       segundos atravessando o quarto, e balao aparecendo com ela no meio do
+       caminho e o mesmo erro que ja quebrou o painel do desenho. */
+    if(yuna.rota && yuna.rota.length) return;
+    if(yuna.indoPara) return;
+    const ap = Math.min(1, ((agora - (a.cena.desde || agora)) - 400) / 300);
+    if(ap <= 0.01) return;
+
+    balaoEm(c.pergunta, yuna.x, yuna.y - ALT, true, ap);
+    /* O ROBO SO FALA QUANDO TEM O QUE DIZER. Esperando, ele pensa — tres
+       pontos que andam, que e o unico jeito honesto de mostrar "ainda nao
+       chegou" sem inventar resposta. */
+    const pensando = ".".repeat(1 + (Math.floor(agora / 400) % 3));
+    const fala = c.estado === "respondida" ? c.resposta
+               : c.estado === "esperando"  ? pensando : null;
+    if(fala != null) balaoEm(fala, ROBO.x + ROBO.w, ROBO.y, false, ap);
+  }
+
+  function desenharFala(agora){
+    if(!fala) return;
+    if(fala.desde == null) fala.desde = agora;      // carimba no relogio do laco
+    const t = agora - fala.desde;
+    fala.n = (fala.n || 0) + 1;
+    /* JANELA DE DIAGNOSTICO. O console do painel devolve so o buffer do
+       carregamento, entao log nao serve pra depurar o laco: aqui o state fica
+       numa variavel que da pra ler de fora a qualquer momento. */
+    window.__diagFala = { frames: fala.n, agora: Math.round(agora),
+      desde: Math.round(fala.desde), t: Math.round(t), dur: fala.dur };
+    if(t > fala.dur){ fala = null; return; }
+    /* entra em 180ms, sai em 300ms — o resto do tempo fica firme */
+    const ap = Math.min(1, t / 180) * Math.min(1, Math.max(0, (fala.dur - t) / 300));
+    if(ap <= 0.01) return;
+
+    /* CORPO DA LETRA. Era 0,085 da altura dela — legivel de perto, apertado
+       numa live que as pessoas assistem no celular ou de longe. A fala e o
+       conteudo do show: se da trabalho ler, nao adianta ela escrever bem. */
+    const cor = Math.round(ALT * 0.105);              // corpo da letra
+    ctx.save();
+    ctx.font = cor + "px 'Silkscreen','IBM Plex Mono',monospace";
+    ctx.textBaseline = "top";
+    const larguraMax = Math.min(W * 0.32, ALT * 2.4);
+    const linhas = quebrar(fala.texto, larguraMax);
+    const alturaLinha = Math.round(cor * 1.75);
+    const pad = Math.round(cor * 0.85);
+    const larg = Math.max(...linhas.map((l) => ctx.measureText(l).width)) + pad * 2;
+    const alt = linhas.length * alturaLinha + pad * 2 - Math.round(cor * 0.35);
+
+    /* Ancora: acima da cabeca dela. Sentada numa estacao a cabeca desce,
+       entao o balao desce junto — senao ele fica boiando meio metro acima. */
+    /* O BALAO SAI PRA DIREITA DELA, nao centrado.
+       Centrado ele cobria o desenho dela — que e o que a pessoa esta olhando.
+       Agora a borda esquerda do balao nasce quase na vertical do corpo e o
+       texto cresce pro lado, com a cauda apontando pra cabeca. Se nao couber a
+       direita (ela encostada na parede da cozinha), espelha pra esquerda em vez
+       de espremer. */
+    /* ALTURA DO BALAO = acima do topo DELA, medido, nunca estimado.
+       Em pe, o topo e o do proprio sprite. Numa estacao, e o perfil de topo
+       da silhueta na faixa em que ela esta — restrito a essa faixa de
+       proposito: no cafe a silhueta inclui o armario da cozinha, que comeca
+       la em cima e jogaria o balao pra fora da tela. */
+    let topoDela = yuna.y - ALT;
+    if(yuna.estacao){
+      const e = estacoes[yuna.estacao];
+      const perfil = e && e.topoPorColuna;
+      if(perfil){
+        const faixa = Math.round(ALT * 0.42);           // a largura dela, com folga
+        let menor = Infinity;
+        for(let x = Math.round(yuna.x - faixa); x <= Math.round(yuna.x + faixa); x++){
+          const i = x - perfil.x0;
+          if(i < 0 || i >= perfil.larg) continue;
+          const t = perfil.topo[i];
+          if(t >= 0 && t < menor) menor = t;
+        }
+        if(menor < Infinity) topoDela = menor;
+      }
+    }
+    const acima = yuna.y - topoDela;
+    const cauda = Math.round(cor * 0.55);
+    const recuo = Math.round(cor * 0.9);         // o quanto o balao "abraca" a cabeca
+    /* O BALAO TROCA DE LADO QUANDO ELA DESENHA.
+       A fala sai a direita da cabeca dela — decisao do Michel, pra nunca cobrir
+       o desenho. Mas o canvas do atelier tambem abre a direita enquanto ela
+       desenha no tapete, e os dois disputariam o mesmo espaco. Desenhando, a
+       fala vai pra esquerda; no resto do dia continua onde sempre esteve. */
+    /* Mesmo criterio do painel: a fala so troca de lado quando o painel esta
+       de fato aberto, senao o balao pula pra esquerda enquanto ela ainda
+       atravessa o quarto e nao ha nada na direita pra desviar. */
+    const desenhando = !!(yuna.gesto && yuna.gesto.n === "desenhar");
+    let bx = Math.round(yuna.x - recuo);
+    let espelhado = false;
+    if(desenhando){ bx = Math.round(yuna.x + recuo - larg); espelhado = true; }
+    if(!desenhando && bx + larg > W - 6){ bx = Math.round(yuna.x + recuo - larg); espelhado = true; }
+    if(desenhando && bx < 6){ bx = Math.round(yuna.x - recuo); espelhado = false; }
+    let by = Math.round(yuna.y - acima - alt) + Math.round((1 - ap) * cor * 0.6);
+    bx = Math.max(6, Math.min(W - larg - 6, bx));
+    by = Math.max(6, by);
+    /* A cauda fica no canto de baixo do lado DELA, nao no meio do balao. */
+    const pontaAlvo = espelhado ? bx + larg - recuo : bx + recuo;
+    const pontaX = Math.max(bx + cauda * 2, Math.min(bx + larg - cauda * 2, Math.round(pontaAlvo)));
+
+    ctx.globalAlpha = ap;
+    if(window.__diagFala){ window.__diagFala.ap = +ap.toFixed(3); window.__diagFala.bx = bx; window.__diagFala.by = by; }
+    ctx.fillStyle = "rgba(10,6,16,.38)";
+    ctx.beginPath();
+    ctx.roundRect(bx + 2, by + 3, larg, alt, Math.round(cor * 0.9));
+    ctx.fill();
+    ctx.fillStyle = "#fdfaff";
+    ctx.beginPath();
+    ctx.roundRect(bx, by, larg, alt, Math.round(cor * 0.9));
+    ctx.fill();
+    ctx.beginPath();                                   // a cauda
+    ctx.moveTo(pontaX - cauda, by + alt - 1);
+    ctx.lineTo(pontaX, by + alt + cauda);
+    ctx.lineTo(pontaX + cauda, by + alt - 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#2a2137";
+    linhas.forEach((l, i) => ctx.fillText(l, bx + pad, by + pad + i * alturaLinha));
+    ctx.restore();
+  }
+
+  /* ==================== A MOLDURA DE CAMERA =============================
+     O filtro de telejornal: scanlines, vinheta, o ponto REC e o nome da
+     camera. Ele nao concorre com o balao — o balao e a VOZ dela e o filtro e
+     o ENQUADRAMENTO, dizendo que isto esta acontecendo agora.
+
+     Duas decisoes para nao estragar o pixel art:
+     · as scanlines sao desenhadas UMA VEZ num padrao e repetidas, com alfa
+       baixo. Redesenhar linha a linha todo frame custa caro e, com alfa
+       alto, o quarto vira televisao quebrada em vez de camera.
+     · a vinheta e um gradiente radial suave. Escurecer os cantos e o que faz
+       o olho ler "camera" mais do que qualquer outro elemento. */
+  let CAMERA = true;
+  window.yunaCamera = (liga) => { CAMERA = !!liga; };
+  const cvScan = document.createElement("canvas");
+  {
+    cvScan.width = 1; cvScan.height = 3;
+    const g = cvScan.getContext("2d");
+    g.fillStyle = "rgba(0,0,0,.30)"; g.fillRect(0, 0, 1, 1);
+  }
+  const padraoScan = ctx.createPattern(cvScan, "repeat");
+  const vinheta = (() => {
+    const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.30,
+                                       W / 2, H / 2, Math.max(W, H) * 0.72);
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(1, "rgba(0,0,0,.42)");
+    return g;
+  })();
+
+  function desenharCamera(agora){
+    if(!CAMERA) return;
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = padraoScan;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = vinheta;
+    ctx.fillRect(0, 0, W, H);
+
+    const cor = Math.round(ALT * 0.075);
+    ctx.font = "700 " + cor + "px 'Silkscreen','IBM Plex Mono',monospace";
+    ctx.textBaseline = "top";
+    ctx.shadowColor = "rgba(0,0,0,.85)";
+    ctx.shadowBlur = 4;
+
+    /* REC pisca a cada segundo — o ponto, nao a palavra: piscar a palavra
+       inteira puxa o olho o tempo todo e cansa em dez minutos de live. */
+    const on = (agora % 1600) < 1000;
+    const x0 = Math.round(W * 0.022), y0 = Math.round(H * 0.038);
+    if(on){
+      ctx.fillStyle = "#ff3b47";
+      ctx.beginPath();
+      ctx.arc(x0 + cor * 0.35, y0 + cor * 0.55, cor * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = "rgba(255,255,255,.92)";
+    ctx.fillText("REC", x0 + cor * 1.1, y0);
+
+    /* O relogio e o do espectador: a live e agora, e a hora na tela e a dele. */
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    const ss = String(d.getSeconds()).padStart(2, "0");
+    ctx.textAlign = "right";
+    ctx.fillStyle = "rgba(255,255,255,.78)";
+    ctx.fillText("CAM 01 — YUNA'S ROOM", W - x0, y0);
+    ctx.fillText(hh + ":" + mm + ":" + ss, W - x0, y0 + cor * 1.7);
+
+    /* A CARTEIRA DELA, embaixo a esquerda.
+       Pedido do Michel (01/09/2026): o saldo REAL na tela. E o numero que
+       torna o resto verdade — sem ele, um agente que "opera" e indistinguivel
+       de um sprite falando de mercado. O valor vem do saldo on-chain que o
+       motor publica, nao do placar interno: a corrente e a verdade.
+       Menor que o resto do HUD de proposito — informa sem competir com ela. */
+    if(motor.carteira && motor.carteira.address){
+      const c = motor.carteira;
+      const cor2 = Math.round(cor * 0.82);
+      const yb = H - Math.round(H * 0.034) - cor2 * 2.1;
+      ctx.textAlign = "left";
+      ctx.font = "700 " + cor2 + "px 'Silkscreen','IBM Plex Mono',monospace";
+      ctx.fillStyle = "rgba(255,255,255,.62)";
+      ctx.fillText("WALLET " + c.address.slice(0, 4) + "…" + c.address.slice(-4),
+                   x0, yb);
+      /* O saldo em destaque: e o que muda ao vivo quando ela compra e vende. */
+      ctx.fillStyle = "rgba(255,255,255,.92)";
+      const sol = (Number(c.sol) || 0).toFixed(3);
+      const usd = Math.round(Number(c.usd) || 0).toLocaleString("en-US");
+      ctx.fillText(sol + " SOL  ·  $" + usd, x0, yb + cor2 * 1.25);
+    }
+    ctx.restore();
+  }
+
+  /* ==================== O FIO ATE O MOTOR ==============================
+     A live roda sozinha: ninguem clica em nada. Entao o quarto nao pode
+     decidir o que ela faz — quem decide e o motor, e aqui a decisao vira
+     lugar e fala.
+
+     `/api/state` ja publica tudo do agente; o que interessa e `cena` (o movel
+     onde ela deveria estar, derivado da acao que ela escolheu) e `cenaFala`
+     (a linha que ela disse em voz alta ao fazer).
+
+     DOIS MODOS, e a queda entre eles e automatica:
+     · COM motor — o passeio aleatorio desliga e ela so se move por ordem dele.
+     · SEM motor (este artifact aberto sozinho, ou o servidor fora do ar) — o
+       quarto volta a se virar sozinho, senao a demo vira uma boneca parada.
+     Tres falhas seguidas derrubam pro modo local; uma resposta boa reata. */
+  const FONTE = (D.motor || "/api/state");
+  const motor = { ligado:false, falhas:0, ultimaFala:0, ultimoMovel:null,
+                  visto:0, dados:null, carteira:null };
+
+  function aplicarDoMotor(a){
+    if(!a) return;
+    const cena = a.cena, fala = a.cenaFala;
+    /* O saldo on-chain que o motor ja publica em `chain`. Guardo em vez de
+       redesenhar do zero: o HUD roda a 60 quadros e o estado chega a cada
+       poucos segundos. */
+    if(a.chain && a.chain.address) motor.carteira = a.chain;
+    if(fala && fala.t && fala.t > motor.ultimaFala){
+      motor.ultimaFala = fala.t;
+      dizer(fala.texto);
+    }
+    /* O live view vem no proprio /api/state (`liveView` do agente). Se o
+       navegador remoto nao estiver de pe, vem null — e ai nao ha painel, o que
+       e o correto: melhor quarto inteiro do que um retangulo preto. */
+/* O PAINEL SEGUE A ORDEM DO MOTOR — como funcionava antes de eu mexer.
+       Eu tinha trocado para "abre quando ela SENTA", achando que era mais
+       honesto. Foi pior: junto com o reenvio de ordem abaixo, ela nunca chegava
+       a sentar e o painel nunca abria. O Michel perdeu meio dia por causa de
+       uma mudanca que ele nao pediu. Se o motor diz que ela esta na mesa, o
+       navegador dela esta aberto. */
+    /* ABRE QUANDO ELA SENTA, FECHA QUANDO ELA LEVANTA — pedido do Michel, e e o
+       que o espectador entende: o navegador e dela, nao do motor.
+       Isto ja tinha sido tentado e quebrou a live inteira, mas o culpado nao era
+       este criterio e sim o REENVIO de ordem que eu tinha posto junto: ele
+       reiniciava a caminhada a cada 2,5s, ela nunca terminava de sentar e o
+       painel nunca abria. O reenvio saiu; o criterio pode voltar. */
+    /* O CONSOLE OCUPA O LUGAR DO NAVEGADOR ENQUANTO ELA PROGRAMA.
+       Programar e na mesa, e o painel do navegador abre sempre que ela senta
+       la — os dois brigariam pelo mesmo espaco. Enquanto ela escreve ou roda,
+       a tela mostra o codigo; o navegador volta depois.
+
+       A JANELA E POR TEMPO porque o motor NUNCA limpa `bancadaTela`: o campo
+       fica preenchido ate o proximo escrever/rodar. Sem o prazo, o console
+       abriria uma vez e nunca mais sairia da frente.
+
+       E o gatilho e a POSE (`yuna.estacao`), nao a ordem do motor. Amarrar a
+       ordem ja custou meio dia duas vezes: o painel abria com ela ainda
+       atravessando o quarto. */
+    const bt = a.bancadaTela;
+    /* NAO AMARRA AO MOVEL. O `place` que ELA escolhe vence a tabela do motor:
+       ela pode escrever codigo do sofa, e amarrar o console a "mesa" faria o
+       painel sumir justamente quando ela decide trabalhar de outro canto.
+       O navegador continua preso a mesa — e la que ele existe. */
+    const programando = !!(bt && bt.quando && (Date.now() - bt.quando) < 75000);
+    bancadaNaTela(programando, bt);
+    navegadorNaTela(a.liveView || null, yuna.estacao === "mesa" && !programando);
+
+    /* O TAPETE NAO E UMA ESTACAO — e um LUGAR DO CHAO.
+       Estacao, aqui, e movel que ENGOLE ela: a cama vira cama-com-ela-dentro, a
+       cadeira vira cadeira-com-ela-sentada, e pra isso cada uma precisa dos
+       proprios quadros desenhados. O tapete nao tem quadro nenhum (falta o
+       sprite dela sentada desenhando), entao `estacoes["tapete"]` nao existe —
+       e o `if` abaixo, que exige a estacao, pulava a cena inteira: o motor
+       mandava ela pro tapete, o quarto ignorava, e o painel do desenho nunca
+       abria. Foi isto que o Michel viu duas vezes, e nao tinha nada a ver com
+       a transmissao, que ja estava de pe.
+       Enquanto o sprite nao existe: ela CAMINHA ate o tapete e fica la. Em pe,
+       o que nao e o desenho final — mas no lugar certo, e com a obra na tela. */
+    const noTapete = !!(cena && cena.movel === "tapete");
+    /* A INTENCAO fica aqui; o gesto nasce no laco do quadro.
+       O inicio do gesto TEM que ser marcado com o relogio DO QUADRO — com
+       `performance.now()` o carimbo fica a frente do frame em curso, o indice
+       da -1, e (-1 % 6) em JS e -1: o sprite vira undefined e o laco morre com
+       ela sumindo da tela. Ja aconteceu uma vez; nao repito. */
+    yuna.querDesenhar = noTapete;
+    if(noTapete && motor.ultimoMovel !== "tapete"){
+      motor.ultimoMovel = "tapete";
+      /* `irPara` ja levanta ela da estacao em que estiver e guarda o destino
+         pra retomar a caminhada depois da animacao de sair — chamar `sair()`
+         antes disso jogava a posicao dela de volta pro movel no meio do
+         caminho. */
+      irPara(PISO_TAPETE[0], PISO_TAPETE[1], null);
+    }
+    /* O PAINEL SEGUE A POSE, NAO A ORDEM.
+       Amarrado a ordem do motor, o painel abria no instante em que a cena
+       virava "tapete" — e ela ainda tinha meio quarto pra atravessar. O traco
+       corria uns dez segundos com ela ANDANDO, e no fim ela dizia "larguei a
+       prancheta" com o desenho no comeco: o Michel viu isso e chamou de "sem
+       sincronia", com razao.
+       A regra e a mesma da cadeira: abre quando ela SENTA, fecha quando ela
+       levanta. `yuna.gesto` e a pose sentada — so existe depois que a
+       caminhada acabou. */
+    const desenhandoAgora = !!(yuna.gesto && yuna.gesto.n === "desenhar");
+    pranchetaNaTela(desenhandoAgora);
+
+    /* A CAIXA DO ROBO. Mesmo tratamento do tapete, e pelo mesmo motivo: nao ha
+       quadro dela sentada ali, entao `estacoes["caixa"]` nao existe e o bloco
+       de estacoes abaixo pularia a cena inteira. Ela CAMINHA ate a caixa e
+       fica em pe, de frente pro robo — que e o que uma pessoa faz quando vai
+       falar com alguem. */
+    const naCaixa = !!(cena && cena.movel === "caixa");
+    if(naCaixa && motor.ultimoMovel !== "caixa"){
+      motor.ultimoMovel = "caixa";
+      irPara(PISO_CAIXA[0], PISO_CAIXA[1], null);
+    }
+
+    if(cena && cena.movel && estacoes[cena.movel]){
+      /* REENVIA A ORDEM SE ELA NAO ESTIVER LA.
+         Antes eu so mandava quando o movel MUDAVA: se ela saisse da estacao por
+         qualquer motivo, ninguem a mandava voltar e ela ficava de pe no meio do
+         quarto enquanto o motor jurava que ela estava trabalhando. `indoPara`
+         evita reiniciar a caminhada de quem ja esta a caminho. */
+      /* SO MANDA IR QUANDO O MOVEL MUDA — repetir a ordem a cada consulta
+         reiniciava a caminhada em cima da animacao de sentar, e ela ficava
+         eternamente de pe ao lado da mesa. Este era o comportamento original;
+         eu o "melhorei" e quebrei a live inteira. */
+      if(cena.movel !== motor.ultimoMovel){
+        const primeira = motor.ultimoMovel === null && !motor.visto;
+        motor.ultimoMovel = cena.movel;
+        if(yuna.estacao !== cena.movel){
+          /* PRIMEIRA VEZ: coloca, nao manda andar. Ver o comentario acima —
+             quem da refresh nao pode ver ela atravessar o quarto de novo. */
+          if(primeira){
+            const e = estacoes[cena.movel];
+            yuna.rota = []; yuna.indoPara = null; yuna.gesto = null;
+            yuna.x = e.aproximar[0]; yuna.y = e.aproximar[1];
+            yuna.estacao = cena.movel;
+            yuna.fase = null; yuna.faseIdx = 0;
+            const o = e.olhar;
+            if(o) yuna.olhando = {dx:o[0], dy:o[1]};
+          } else usar(cena.movel);
+        }
+      }
+      motor.visto = 1;
+    } else if(cena === null && motor.ultimoMovel){
+      motor.ultimoMovel = null;
+      if(yuna.estacao) sair();
+    }
+  }
+
+  async function ouvirMotor(){
+    let pendente = null;
+    try{
+      const r = await fetch(FONTE, { cache:"no-store" });
+      if(!r.ok) throw new Error("http " + r.status);
+      const j = await r.json();
+      const ag = j && j.state && j.state.agents;
+      const a = ag && (ag.yuna || ag[Object.keys(ag)[0]]);
+      if(!a) throw new Error("sem agente no estado");
+      motor.dados = j.state || null;      // o retrato inteiro, pra tarja
+      if(!motor.ligado){
+        motor.ligado = true;
+        passeio = false;                    // a autonomia agora vem do motor
+        console.log("palco ligado ao motor — o passeio aleatorio saiu de cena");
+      }
+      motor.falhas = 0;
+      pendente = a;
+    }catch(e){
+      if(motor.ligado && ++motor.falhas >= 3){
+        motor.ligado = false; passeio = true; motor.ultimoMovel = null;
+        navegadorNaTela(null, false);        // sem motor nao ha navegador
+        pranchetaNaTela(false);
+        bancadaNaTela(false, null);          // nem console com codigo velho
+        console.log("motor fora do ar (" + e.message + ") — o quarto voltou a se virar sozinho");
+      } else if(!motor.ligado && motor.falhas < 3){
+        motor.falhas++;
+      }
+      return;
+    }
+    /* APLICAR FICA FORA DO try DA BUSCA, de proposito.
+       Estavam no mesmo bloco, e como `motor.falhas` e zerado logo antes, um
+       erro DENTRO de aplicarDoMotor era engolido e nunca chegava as 3 falhas
+       que derrubam o modo motor: o palco seguia "ligado" sem aplicar nada, em
+       silencio absoluto. Foi assim que o painel do navegador ficou fechado com
+       o state dizendo que ela estava no PC. Erro de aplicacao agora APARECE. */
+    try { aplicarDoMotor(pendente); }
+    catch(e){ console.error("nao consegui aplicar o state do motor:", e); }
+  }
+  setInterval(ouvirMotor, 2500);
+  ouvirMotor();
+
+  /* ===================== A TARJA DA LIVE (DESLIGADA) ====================
+     Tirada da tela a pedido do Michel (30/08/2026). A funcao fica aqui porque
+     religar e uma linha; o que saiu foi a chamada no laco de desenho.
+     Quem cai na stream tem cinco segundos pra entender que isto e real. A
+     animacao sozinha nao faz isso — parece um gif bonito. O que faz e NUMERO:
+     a carteira dela, a posicao aberta, as calls do dia.
+
+     Desenhada no canvas, como a moldura de camera, pra sair inteira no OBS. E
+     so aparece com o motor de pe: sem dados, mostrar zeros seria pior que nao
+     mostrar nada — seria mentir pra quem esta assistindo. */
+  function desenharTarja(){
+    const d = motor.dados;
+    if(!d || !motor.ligado) return;
+    const a = d.agents && (d.agents.yuna || d.agents[Object.keys(d.agents)[0]]);
+    if(!a) return;
+
+    const alt = Math.round(H * 0.072);
+    const y0 = H - alt;
+    ctx.save();
+    ctx.fillStyle = "rgba(8,6,12,.86)";
+    ctx.fillRect(0, y0, W, alt);
+    ctx.fillStyle = "#ff4fa3";
+    ctx.fillRect(0, y0, W, 2);
+
+    const cor = Math.round(alt * 0.30);
+    const rot = Math.round(alt * 0.19);
+    let x = Math.round(W * 0.022);
+    const campo = (rotulo, valor, tom) => {
+      ctx.font = "700 " + rot + "px 'Silkscreen','IBM Plex Mono',monospace";
+      ctx.fillStyle = "rgba(255,255,255,.45)";
+      ctx.textBaseline = "top";
+      ctx.fillText(rotulo, x, y0 + alt * 0.20);
+      ctx.font = "700 " + cor + "px 'IBM Plex Mono',monospace";
+      ctx.fillStyle = tom || "#fff";
+      ctx.fillText(valor, x, y0 + alt * 0.46);
+      const larg = Math.max(ctx.measureText(valor).width,
+        ctx.measureText(rotulo).width * (rot / cor) * 1.6);
+      x += larg + Math.round(W * 0.030);
+    };
+
+    campo("WALLET", "$" + (a.wallet ?? 0).toFixed(2), "#7fd0a0");
+    const abertas = (d.positions || []).filter((p) => p.agent === a.id);
+    campo("OPEN", abertas.length ? abertas.length + " position" + (abertas.length > 1 ? "s" : "") : "none");
+    /* CALLS: o placar e o ativo dela. Quem chega no meio da live precisa ver
+       o acerto acumulado, nao so a chamada da vez. */
+    const calls = (d.callouts || []).filter((c) => c.agent === a.id);
+    const fechadas = calls.filter((c) => c.resultado);
+    const certas = fechadas.filter((c) => c.resultado === "acertou").length;
+    campo("CALLS", fechadas.length ? certas + "/" + fechadas.length + " up" : "none yet",
+      fechadas.length && certas * 2 >= fechadas.length ? "#7fd0a0" : "#ffb36b");
+    const dia = a.dayEarned ?? 0;
+    campo("TODAY", (dia >= 0 ? "+" : "") + "$" + dia.toFixed(2), dia > 0 ? "#7fd0a0" : "#fff");
+
+    /* A call ABERTA fica na direita, com o mint: e o que o espectador pode ir
+       conferir na pump enquanto assiste. */
+    const aberta = calls.filter((c) => c.aberto).slice(-1)[0];
+    if(aberta){
+      ctx.textAlign = "right";
+      ctx.font = "700 " + rot + "px 'Silkscreen','IBM Plex Mono',monospace";
+      ctx.fillStyle = "rgba(255,255,255,.45)";
+      ctx.fillText("CALLING NOW", W - Math.round(W * 0.022), y0 + alt * 0.20);
+      ctx.font = "700 " + cor + "px 'IBM Plex Mono',monospace";
+      ctx.fillStyle = "#ff9ecd";
+      ctx.fillText(String(aberta.mint).slice(0, 10) + "…", W - Math.round(W * 0.022), y0 + alt * 0.46);
+      ctx.textAlign = "left";
+    }
+    ctx.restore();
+  }
+
+  /* =============== O NAVEGADOR ENTRA E SAI COM ELA ======================
+     Regra unica: o painel existe enquanto ela estiver NO PC com um navegador
+     de pe. Levantou da mesa, fecha. Nao ha state intermediario — o palco nao
+     pode ficar mostrando uma pagina que ela nao esta mais lendo. */
+  /* O CENTRO DO TAPETE REDONDO, medido no cenario (2752x1536, reduzido pra
+     1376x768). E onde ela senta pra desenhar. */
+  const PISO_TAPETE = [519, 560];
+  /* EM FRENTE A CAIXA FECHADA (que ocupa x 847..936, base 381), um pouco a
+     esquerda: assim ela fica virada pro robo e nao tapa ele. */
+  const PISO_CAIXA  = [826, 430];
+
+  const nav = {
+    caixa: document.getElementById("navegador"),
+    quadro: document.getElementById("navegador-quadro"),
+    rotulo: document.getElementById("navegador-url"),
+    monitor: document.getElementById("monitor"),
+    url: null, aberto: false,
+  };
+
+  /* A PRANCHETA.
+     A tela do desenho e servida pela maquina que desenha, nao pelo servidor da
+     live: o motor de imagem roda em casa, na GPU, e mandar isso pra nuvem
+     custaria mais que o projeto inteiro. Entao o endereco e local por padrao —
+     e a captura do OBS roda nessa mesma maquina, que e o que o espectador ve.
+     `?atelier=` sobrescreve quando a tela estiver em outro lugar. */
+  const ATELIER_URL = (() => {
+    try {
+      const q = new URLSearchParams(location.search).get("atelier");
+      if(q) return q;
+    } catch(e){}
+    /* O PROPRIO SITE, nao localhost.
+       Apontando pra `localhost:8435` o desenho so existia pra quem estivesse na
+       maquina de casa — quem abrisse yuna.cam via o painel vazio. Agora o
+       servidor dela serve o player e os toques, entao o desenho existe em
+       qualquer lugar onde o site esteja de pe. Caminho relativo: vale em
+       localhost e no dominio, sem configuracao. */
+    return "/desenho";
+  })();
+
+  /* A VELOCIDADE DO TRACO, repassada pra tela do desenho.
+     Em producao nao se passa nada: o padrao do player (42) desenha a obra em
+     ~50 minutos, que e a hora do desenho dela. `?vel=90` na URL do quarto faz
+     a mesma obra sair em dois minutos — e o unico jeito de conferir o painel
+     inteiro sem ficar uma hora olhando. */
+  const VEL_DESENHO = (() => {
+    try {
+      const v = new URLSearchParams(location.search).get("vel");
+      if(v !== null && v !== "") return Math.max(0, Math.min(100, +v || 42));
+    } catch(e){}
+    return null;
+  })();
+  const pran = {
+    caixa: document.getElementById("prancheta"),
+    quadro: document.getElementById("prancheta-quadro"),
+    aberto: false,
+  };
+
+  const banc = {
+    caixa: document.getElementById("bancada"),
+    arq:   document.getElementById("bancada-arq"),
+    cod:   document.getElementById("bancada-cod"),
+    aberto: false, carimbo: 0,
+  };
+  /* TEXTCONTENT, NUNCA INNERHTML. O que entra aqui e o codigo que ELA escreveu
+     e a saida que ele imprimiu — texto de modelo, sem sanitizacao nenhuma no
+     caminho. innerHTML numa pagina publica com isso dentro e buraco de
+     verdade, nao teoria.
+     O conteudo e atualizado ANTES do guarda de estado: o guarda so evita
+     repintar o painel, e perder a troca de arquivo por causa dele deixaria o
+     console mostrando codigo velho. */
+  function bancadaNaTela(mostrar, dados){
+    if(mostrar && dados && dados.quando !== banc.carimbo){
+      banc.carimbo = dados.quando;
+      const rodou = dados.saida != null;
+      banc.arq.textContent = (rodou ? "yuna ran " : "yuna is writing ") + (dados.arquivo || "");
+      banc.cod.textContent = String(rodou ? dados.saida : (dados.codigo || ""));
+    }
+    if(mostrar === banc.aberto) return;
+    banc.aberto = mostrar;
+    banc.caixa.hidden = !mostrar;
+    banc.caixa.classList.toggle("aberto", mostrar);
+    /* OPACIDADE NO ESTILO tambem, pelo mesmo motivo do navegador: a classe
+       sozinha depende do compositor, que pausa com a janela fora de foco. */
+    banc.caixa.style.opacity = mostrar ? "1" : "0";
+  }
+
+  function pranchetaNaTela(desenhando){
+    if(!pran.caixa) return;
+    if(desenhando === pran.aberto) return;
+    pran.aberto = desenhando;
+    pran.caixa.hidden = !desenhando;
+    pran.caixa.classList.toggle("aberto", desenhando);
+    /* Opacidade no estilo, pelo mesmo motivo do painel do navegador: transicao
+       CSS nao avanca com a janela fora de foco, e numa live 24/7 isso e a
+       diferenca entre o desenho aparecer e um retangulo invisivel. */
+    pran.caixa.style.opacity = desenhando ? "1" : "0";
+    pran.caixa.style.transform = desenhando ? "none" : "translateX(2%)";
+    if(desenhando){
+      /* Endereco novo a cada vez: a tela do desenho vive de um stream de
+         eventos, e reabrir com o mesmo src deixaria o iframe preso no stream
+         morto da sessao anterior. */
+      /* `desde` = o instante em que ela sentou no tapete, que o motor publica
+         em `cena.desde`. E com ele que o servidor calcula em que ponto a obra
+         deveria estar: quem abre no meio da hora ve o meio, e dar refresh nao
+         volta pro comeco. Sem isso, cada espectador via um desenho diferente. */
+      let u = ATELIER_URL + (ATELIER_URL.includes("?") ? "&" : "?") + "_r=" + Date.now();
+      if(VEL_DESENHO !== null) u += "&vel=" + VEL_DESENHO;
+      const sentouEm = (motor.dados && motor.dados.agents && motor.dados.agents.yuna
+                        && motor.dados.agents.yuna.cena || {}).desde;
+      if(sentouEm) u += "&desde=" + sentouEm;
+      pran.quadro.src = u;
+    } else {
+      pran.quadro.removeAttribute("src");
+    }
+  }
+
+  /* A telinha vive em cima do canvas, entao tem que ser reposicionada sempre
+     que o canvas mudar de tamanho (janela, OBS, fullscreen). */
+  /* Os quatro cantos da TELA do monitor (a area escura, dentro da moldura),
+     em coordenadas NATIVAS do cenario — 2752x1536. Ficam em nativo de
+     proposito: a pagina roda em meia-res na demo e em resolucao cheia na
+     live, e um numero em coordenada de cena mudaria de significado entre as
+     duas. Os valores antigos passavam da moldura pela direita, e era isso que
+     fazia a telinha "vazar" pra fora do monitor. */
+  /* A TELA DO MONITOR, em coordenadas NATIVAS (2752x1536).
+     Em isometrico ela e um paralelogramo, e eu cheguei a inclinar o iframe pra
+     acompanhar — ficou TORTO: pagina da web inclinada nao se le. Entao o que
+     entra e o maior RETANGULO RETO que cabe dentro da tela, e o furo no canvas
+     usa o mesmo retangulo. A moldura em volta continua sendo pixel do cenario,
+     entao ainda parece um monitor. */
+  /* OS QUATRO CANTOS DA TELA, marcados pelo Michel no editor (30/08/2026),
+     em coordenadas NATIVAS do cenario (2752x1536). Ele acompanhou a inclinacao
+     isometrica canto a canto — entao o navegador entra INCLINADO junto, como a
+     tela de verdade, e nao mais como um retangulo reto no meio dela. */
+  const MONITOR_NATIVO = {
+    a:[1249.8, 468.0],   // superior esquerdo
+    b:[1382.1, 398.1],   // superior direito
+    c:[1382.1, 504.6],   // inferior direito
+    d:[1250.1, 571.8],   // inferior esquerdo
+  };
+  const TELA_MONITOR = {
+    a:[MONITOR_NATIVO.a[0]/D.K, MONITOR_NATIVO.a[1]/D.K],
+    b:[MONITOR_NATIVO.b[0]/D.K, MONITOR_NATIVO.b[1]/D.K],
+    c:[MONITOR_NATIVO.c[0]/D.K, MONITOR_NATIVO.c[1]/D.K],
+    d:[MONITOR_NATIVO.d[0]/D.K, MONITOR_NATIVO.d[1]/D.K],
+  };
+  /* O encaixe tem que seguir o tamanho da janela: na live o canvas e
+     redimensionado por codigo, e sem isso a telinha ficava presa no tamanho de
+     quando o painel abriu. */
+  addEventListener("resize", () => { try{ encaixarMonitor(); }catch(e){} });
+
+  /* A ALTURA DO PAINEL SAI DA PROPORCAO DA TELA REMOTA, nao de um numero fixo.
+     O navegador dela roda em 1280x800 (proporcao 1,6). O painel estava com
+     altura marcada na mao (78,6% da cena) e sobrava uma FAIXA BRANCA embaixo:
+     o inspector desenha a tela remota ajustada a largura e o resto e o fundo
+     branco da propria pagina dele. Aqui a largura continua sendo a que o Michel
+     marcou; a altura vira largura/1,6 mais a barra de endereco do inspector,
+     que tem altura fixa em px e nao acompanha a escala. */
+  const TELA_REMOTA = 1280 / 800;      // o setViewport do browser.js
+  const BARRA_INSPECTOR = 44;          // a barrinha de URL, medida na tela
+
+  function encaixarPainel(){
+    if(!nav.caixa) return;
+    const larg = nav.caixa.offsetWidth;
+    /* LARGURA AINDA NAO EXISTE = NAO CALCULA NADA.
+       O painel abre com uma transicao de largura; medir no primeiro frame dava
+       0, e a conta virava 0/1.6 + 44 = 45px de altura — uma listra fina no
+       lugar do navegador. Um painel de 45px e indistinguivel de painel nenhum,
+       e foi isso que o Michel viu. Abaixo de 100px de largura a medida nao
+       vale; o insistidor abaixo tenta de novo ate valer. */
+    if(larg < 100) return false;
+    const alt = Math.round(larg / TELA_REMOTA) + BARRA_INSPECTOR;
+    nav.caixa.style.height = alt + "px";
+    return true;
+  }
+
+  /* Insiste ate a largura existir: a transicao do painel leva ~350ms e o
+     primeiro frame sempre mede errado. */
+  function encaixarPainelQuandoDer(){
+    let n = 0;
+    const t = setInterval(() => {
+      if(encaixarPainel() || ++n > 20) clearInterval(t);
+    }, 80);
+  }
+  addEventListener("resize", () => { try{ encaixarPainel(); }catch(e){} });
+
+  function encaixarMonitor(){
+    if(!nav.monitor) return;
+    const cv = document.getElementById("tela");
+    if(!cv) return;
+    /* MEDIDA POR LAYOUT, nao por getBoundingClientRect.
+       O rect vem no sistema da VIEWPORT e ja embute qualquer escala aplicada
+       por cima (zoom, emulacao de tela, o proprio OBS): a telinha ia parar
+       longe do monitor. offsetWidth/offsetLeft sao a caixa de layout do
+       elemento em relacao ao .quadro, que e exatamente onde o iframe vive. */
+    const larg = cv.offsetWidth, alt = cv.offsetHeight;
+    if(!larg || !alt) return;
+    const k = larg / W;
+    const ox = cv.offsetLeft, oy = cv.offsetTop;
+    /* A MATRIX mapeia o retangulo do iframe nos quatro cantos marcados: o eixo
+       X vai de `a` a `b`, o eixo Y vai de `a` a `d`. O quarto canto sai de
+       graca — um paralelogramo fica definido por tres pontos. */
+    const { a, b, d } = TELA_MONITOR;
+    const L = 1000, A = 640;               // resolucao interna do iframe
+    nav.monitor.style.width = L + "px";
+    nav.monitor.style.height = A + "px";
+    const m = [
+      (b[0]-a[0]) * k / L, (b[1]-a[1]) * k / L,
+      (d[0]-a[0]) * k / A, (d[1]-a[1]) * k / A,
+      a[0] * k + ox, a[1] * k + oy,
+    ];
+    nav.monitor.style.transform = "matrix(" + m.map(v => v.toFixed(5)).join(",") + ")";
+  }
+  addEventListener("resize", encaixarMonitor);
+
+  function navegadorNaTela(liveUrl, naMesa){
+    const querAbrir = !!liveUrl && naMesa;
+    /* RECONECTA A CADA VEZ QUE ELA SENTA.
+       O painel e um WebSocket ao vivo com o navegador dela. Quando essa conexao
+       cai — sessao reciclada, rede oscilando — o iframe congela em "Debugging
+       connection was closed" e fica assim para sempre, porque o `src` continua
+       igual e o navegador nao recarrega o que nao mudou. Ela pode estar
+       navegando perfeitamente do outro lado e o espectador so ve o erro.
+       Trocar o endereco a cada abertura obriga uma conexao nova: toda vez que
+       ela senta, o painel nasce limpo. */
+    const querReabrir = querAbrir && (nav.url !== liveUrl || !nav.aberto);
+    if(querReabrir){
+      nav.url = liveUrl;
+      const fresco = liveUrl + (liveUrl.includes("?") ? "&" : "?") + "_r=" + Date.now();
+      nav.quadro.src = fresco;
+      nav.monitor.src = fresco;                // a MESMA sessao, nas duas telas
+    }
+    if(querAbrir === nav.aberto) return;
+    nav.aberto = querAbrir;
+    nav.caixa.hidden = !querAbrir;
+    nav.caixa.classList.toggle("aberto", querAbrir);
+    /* OPACIDADE NO ESTILO, NAO SO NA CLASSE.
+       A classe "aberto" liga uma TRANSICAO de opacidade — e transicao CSS nao
+       avanca quando a janela nao esta visivel (o mesmo motivo que congela o
+       requestAnimationFrame). O painel ficava com a classe certa, o link certo,
+       o tamanho certo e opacity 0 para sempre. Estilo inline nao depende de
+       transicao nenhuma. */
+    nav.caixa.style.opacity = querAbrir ? "1" : "0";
+    nav.caixa.style.transform = querAbrir ? "none" : "translateX(-2%)";
+    if(querAbrir) encaixarPainelQuandoDer();
+    nav.monitor.hidden = !querAbrir;
+    if(querAbrir){
+      /* Insiste por meio segundo. Na hora que o painel abre o canvas ainda esta
+         mudando de tamanho (a transicao de largura roda em 450ms), e um encaixe
+         so, no primeiro frame, media o tamanho errado e nao aplicava nada. */
+      let n = 0;
+      const persistir = setInterval(() => {
+        encaixarMonitor();
+        if(++n > 12) clearInterval(persistir);
+      }, 60);
+    }
+    else {
+      /* Fechou: solta a sessao. Deixar dois iframes carregados com ela longe
+         do PC gasta banda e mantem viva uma tela que ninguem esta usando. */
+      nav.url = null;
+      nav.quadro.removeAttribute("src");
+      nav.monitor.removeAttribute("src");
+    }
+  }
+
+  /* O BURACO DO MONITOR.
+     O jeito obvio de por o navegador na telinha e um iframe POR CIMA do
+     canvas — e ele vaza: iframe e retangulo, a tela do monitor e um
+     paralelogramo com moldura em volta, e o retangulo cobre a moldura.
+     Aqui e ao contrario: o iframe fica ATRAS, e o canvas ganha um FURO
+     exatamente no formato da tela. A moldura, o pe e o cabo continuam sendo
+     pixels do cenario desenhados por cima — como num monitor de verdade. */
+  function furarMonitor(){
+    if(!nav || !nav.aberto) return;
+    const { a, b, c, d } = TELA_MONITOR;
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath();
+    ctx.moveTo(a[0], a[1]);
+    ctx.lineTo(b[0], b[1]);
+    ctx.lineTo(c[0], c[1]);
+    ctx.lineTo(d[0], d[1]);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /* ABA OCULTA CONGELA A LIVE.
+     `requestAnimationFrame` para de disparar quando a janela nao esta visivel —
+     descobri isso depurando o balao: o quarto congelava e eu media um valor
+     preso. Numa live de 24h isso e fatal (minimizar a janela = transmissao
+     parada). O marca-passo abaixo desenha em ritmo lento quando o rAF some, o
+     que mantem o relogio andando e a cena viva. */
+  let ultimoQuadro = 0;
+  setInterval(() => {
+    if(document.hidden && performance.now() - ultimoQuadro > 900) quadro(performance.now());
+  }, 1000);
+
+  function quadro(agora){
+    ultimoQuadro = agora;
+    const dt=Math.min(.1,(agora-antes)/1000); antes=agora;
+    if(yuna.rota.length>1){
+      let sobra=VEL*dt;
+      while(sobra>0&&yuna.trecho<yuna.rota.length-1){
+        const a0=yuna.rota[yuna.trecho], b0=yuna.rota[yuna.trecho+1];
+        const comp=Math.hypot(b0[0]-a0[0],b0[1]-a0[1]);
+        const passo=Math.min(sobra,comp-yuna.andado);
+        yuna.andado+=passo; sobra-=passo; yuna.dist+=passo;
+        const t=comp?yuna.andado/comp:1;
+        yuna.x=a0[0]+(b0[0]-a0[0])*t; yuna.y=a0[1]+(b0[1]-a0[1])*t;
+        if(comp) yuna.olhando={dx:(b0[0]-a0[0])/comp,dy:(b0[1]-a0[1])/comp};
+        if(yuna.andado>=comp-1e-6){yuna.trecho++;yuna.andado=0;}
+      }
+      if(yuna.trecho>=yuna.rota.length-1){
+        yuna.rota=[]; paradaDesde=agora;
+        if(yuna.indoPara){                 // chegou: entra na estacao
+          yuna.estacao=yuna.indoPara; yuna.indoPara=null;
+          yuna.fase="entrada"; yuna.faseIdx=0; yuna.faseDesde=agora;
+          /* falas de exemplo SO sem motor. Com o motor ligado quem fala e ela;
+             frase generica de demonstracao no meio da live seria mentira. */
+          if(!motor.ligado) falarDaEstacao(yuna.estacao);
+          /* vira ela pro mesmo lado da arte ANTES do corte: sem isso o
+             ultimo frame andando esta de frente e o primeiro da estacao de
+             costas, e o corte denuncia a troca */
+          const o=estacoes[yuna.estacao].olhar;
+          if(o) yuna.olhando={dx:o[0],dy:o[1]};
+        }
+      }
+    } else if(yuna.estacao){
+      const e=estacoes[yuna.estacao];
+      const naFase=agora-yuna.faseDesde;
+      if(yuna.fase==="entrada"){
+        const f=e.entrada[yuna.faseIdx];
+        if(!f || naFase>f.ms){
+          yuna.faseIdx++;
+          yuna.faseDesde=agora;
+          if(!e.entrada[yuna.faseIdx]){ yuna.fase="loop"; yuna.desde=agora; }
+        }
+      } else if(yuna.fase==="loop"){
+        if(passeio && e.dura_ms && agora-yuna.desde>e.dura_ms) sair();
+      } else if(yuna.fase==="saida"){
+        const f=e.saida[yuna.faseIdx];
+        if(!f || naFase>f.ms){
+          yuna.faseIdx++; yuna.faseDesde=agora;
+          if(!e.saida[yuna.faseIdx]){ acabarEstacao(); paradaDesde=agora; }
+        }
+      }
+    } else if(passeio && agora-paradaDesde>6000+(agora%4000)){
+      passeioSozinha(agora); paradaDesde=agora;
+    }
+
+    ctx.clearRect(0,0,W,H);
+    ctx.drawImage(cenario,0,0);
+    if(verFisica) ctx.drawImage(fis,0,0);
+
+    const pe={x:Math.round(yuna.x),y:Math.round(yuna.y)};
+
+    if(verRota&&yuna.rota.length>1){
+      ctx.strokeStyle="#ff4fa3"; ctx.lineWidth=2; ctx.setLineDash([6,5]);
+      ctx.beginPath(); ctx.moveTo(yuna.rota[0][0],yuna.rota[0][1]);
+      for(const q of yuna.rota) ctx.lineTo(q[0],q[1]);
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    let n=0;
+    if(yuna.estacao){
+      /* DENTRO do movel: o corpo dela nao e desenhado. O que aparece e a
+         propria peca redesenhada com ela — mesmo enquadramento da peca
+         original, entao cobre a que ja esta no fundo sem sobra. */
+      const e=estacoes[yuna.estacao];
+      const naFase=agora-yuna.faseDesde;
+      /* UMA cama por quadro, SEMPRE OPACA.
+         A "cama dupla" que o Michel via era isto: eu desenhava a cama-com-ela
+         por cima da cama do cenario com transparencia, e no meio da transicao
+         as duas apareciam sobrepostas. Nenhuma fase mistura duas camas — a
+         cama troca de sprite de uma vez, e como a MOLDURA de todos os sprites
+         e byte a byte a mesma (ver recortar-estacao.py), a troca nao se ve.
+         Quem aparece e some com transparencia e so o CORPO dela. */
+      let cama=null;
+      if(yuna.fase==="entrada"){
+        const f=e.entrada[yuna.faseIdx];
+        if(f) cama=f.img;
+      } else if(yuna.fase==="saida"){
+        const f=e.saida[yuna.faseIdx];
+        if(f) cama=f.img;
+      }
+      if(!cama){
+        n=Math.floor((agora-yuna.desde)/e.ritmo_ms)%e.quadros.length;
+        cama=e.quadros[n];
+      }
+      /* REMENDO: apaga do cenario a peca que ela esta usando na mao. O 3DS
+         nao pode ficar no chao enquanto ela joga com ele. O remendo e o
+         pedaco do cenario composto SEM aquela peca. */
+      const sumiu=new Set((e.esconder||[]).map(r=>r.n));
+      for(const r of (e.esconder||[])) ctx.drawImage(r.img,r.x,r.y);
+      /* o gato ATRAS do movel da estacao entra antes do frame — o frame ja
+         traz o cenario composto e cobre o que tem que cobrir */
+      const spG = jiji ? passoDoGato(agora,dt) : null;
+      /* O gato entra DEPOIS do retalho (o retalho e opaco: se entrasse
+         antes, sumia em meia sala). Para nao parecer que anda por cima dos
+         moveis, ele e recortado pela silhueta de tudo que esta na frente
+         dele — inclusive o movel da propria estacao. Nada e desenhado sobre
+         o retalho, entao ela continua intacta. */
+      ctx.drawImage(cama,e.pos[0],e.pos[1]);
+      if(jiji){
+        const naFrente=pecas.filter(m=>m.b>jiji.y);
+        /* se o gato esta atras do pe dela, ELA tambem o oclui.
+           A FOLGA E PROPORCIONAL A ALTURA DO MOVEL, nao fixa em 24px.
+           Os 24 existiam por um motivo certo — sem folga, um gato dois pixels
+           a frente dela ja passava por cima do corpo inteiro, e empate tecnico
+           tem que contar como "atras". Mas em movel RASTEIRO (o puff, os
+           pesinhos) o gato anda exatamente dentro dessa faixa, e ali ele era
+           apagado pela silhueta DELA estando na frente: sumia. Movel alto
+           mantem a folga generosa; rasteiro ganha pouca, porque ali 24px e a
+           diferenca entre estar atras e estar na frente. */
+        /* A silhueta dela entra SEMPRE como oclusor — quem decide onde ela
+           cobre e o recorte por coluna, dentro de `desenharGato`. Ver o
+           comentario de la: binario nao serve pra quem esta lado a lado. */
+        if(e.silhueta) naFrente.push(e.silhueta);
+        desenharGato(spG,naFrente);
+      }
+
+      /* SEM TRANSICAO DE EFEITO.
+         Antes o corpo dela encolhia e sumia enquanto a arte da estacao
+         aparecia — e o Michel via isso como "efeito", com razao: era um
+         truque pra tapar a diferenca entre o sprite e a arte. A resposta
+         certa nao e disfarcar, e fazer os dois COINCIDIREM: o ponto onde ela
+         para de andar agora sai da PROPRIA ARTE (onde a folha desenhou os pes
+         dela), e o primeiro/ultimo frame da estacao e ela EM PE. Ai o corte
+         e entre duas poses em pe no mesmo lugar — invisivel, sem efeito. */
+
+      /* BRILHO DA TELA no rosto dela (pufe + 3DS).
+         Pintar isso na arte deixaria a luz morta; aqui ela e desenhada por
+         frame em blend "lighter", entao pode PISCAR com o jogo — uma
+         oscilacao lenta (respiro da tela) somada a tremidas curtas, que e o
+         que a luz de um jogo faz de verdade. */
+      if(e.brilho){
+        const b=e.brilho;
+        const t=(agora-yuna.desde)/1000;
+        const pulso=0.72+0.14*Math.sin(t*1.7)+0.14*Math.sin(t*11.3);
+        const bx=e.pos[0]+b.pos[0], by=e.pos[1]+b.pos[1];
+        ctx.save();
+        ctx.globalCompositeOperation="lighter";
+        /* forca: quanto vale o centro do brilho. Pro sofa o centro nao e o
+           rosto dela e sim A TELA DA TV — o clarao nasce forte na TV e vai
+           MORRENDO ate chegar nela, que e como luz de TV se comporta num
+           quarto escuro (pedido do Michel). */
+        const F=(b.forca||0.5);
+        const g=ctx.createRadialGradient(bx,by,0,bx,by,b.raio);
+        g.addColorStop(0,"rgba("+b.cor+","+(F*pulso).toFixed(3)+")");
+        g.addColorStop(0.22,"rgba("+b.cor+","+(F*0.62*pulso).toFixed(3)+")");
+        g.addColorStop(0.55,"rgba("+b.cor+","+(F*0.26*pulso).toFixed(3)+")");
+        g.addColorStop(1,"rgba("+b.cor+",0)");
+        ctx.fillStyle=g;
+        ctx.beginPath(); ctx.arc(bx,by,b.raio,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+      if(e.zzz && yuna.fase==="loop"){        // so sobe "z" quando ela dorme
+        const bx=e.pos[0]+e.zzz[0], by=e.pos[1]+e.zzz[1];
+        ctx.save();
+        ctx.font="600 "+Math.round(ALT*.13)+"px 'IBM Plex Mono',monospace";
+        ctx.textAlign="center";
+        for(let k=0;k<3;k++){
+          const f=(((agora-yuna.desde)/2600+k/3)%1);
+          ctx.globalAlpha=Math.sin(f*Math.PI)*.75;
+          ctx.fillStyle="#e6d6ff";
+          ctx.fillText("z", bx+f*ALT*.16, by-f*ALT*.42);
+        }
+        ctx.restore();
+      }
+      /* o gato continua vivendo enquanto ela esta numa estacao — este ramo
+         dava return antes de desenha-lo e ele sumia da tela */
+      lPos.textContent=yuna.estacao;
+      lEstado.textContent=yuna.fase==="entrada"?"deitando":yuna.fase==="saida"?"acordando":(e.estado||"na estação");
+      lQuadro.textContent=yuna.fase==="loop"?(n+1)+"/"+e.quadros.length:"—";
+      furarMonitor(); desenharCamera(agora); desenharFala(agora); desenharDialogo(agora); desenharMarca(dt); desenharVersao();
+      requestAnimationFrame(quadro);
+      return;
+    }
+
+    /* Sombra: elipse CHAPADA lia como mancha preta grudada no chao (o Michel
+       reclamou de "artefato preto"). Agora e um gradiente radial que morre na
+       borda — escurece o assoalho em vez de desenhar um objeto nele. */
+    {const rx=ALT*.17, ry=ALT*.042;
+     ctx.save(); ctx.translate(pe.x,pe.y); ctx.scale(1,ry/rx);
+     const g=ctx.createRadialGradient(0,0,0,0,0,rx);
+     g.addColorStop(0,"rgba(12,6,18,.42)");
+     g.addColorStop(.55,"rgba(12,6,18,.24)");
+     g.addColorStop(1,"rgba(12,6,18,0)");
+     ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,rx,0,Math.PI*2); ctx.fill();
+     ctx.restore();}
+
+    let sprite;
+    if(yuna.rota.length>1){
+      n=Math.floor(yuna.dist/PASSO)%6;
+      /* so mostra as costas quando ela vai MESMO embora. A -0.25 (15 graus
+         acima da horizontal) um passo quase lateral ja virava de costas. */
+      const costas=yuna.olhando.dy<-.35;
+      sprite=(costas?(yuna.olhando.dx>0?trasDir:trasEsq)
+                    :(yuna.olhando.dx>0?andarDir:andarEsq))[n];
+    } else {
+      const ang=Math.abs(Math.atan2(yuna.olhando.dy,Math.abs(yuna.olhando.dx)))*180/Math.PI;
+      let nome;
+      if(yuna.olhando.dy>=0) nome = ang<=30?"dir-3":ang<=65?"dir-2":"dir-1";
+      else nome = ang<=30?"dir-3":ang<=65?"dir-4":"dir-5";
+      const esq=yuna.olhando.dx<-.05&&nome!=="dir-1"&&nome!=="dir-5";
+      sprite=(esq?paradaEsq:parada)[nome]||parada[nome];
+      /* SENTA SO QUANDO CHEGAR: com o gesto ligado no instante da ordem ela
+         atravessaria o quarto sentada, deslizando pelo chao. `yuna.rota` diz
+         que a caminhada ainda esta acontecendo. */
+      /* `yuna.rota` E SEMPRE UM ARRAY — nunca null. Testar `!yuna.rota` da
+         false ate parada, e o gesto nunca nascia: ela chegava no tapete e
+         ficava em pe com a obra desenhando sozinha no painel. O criterio de
+         "parada" no quarto inteiro e `rota.length > 1`; uso o mesmo. */
+      if(yuna.querDesenhar && yuna.rota.length<=1 && gestos["desenhar"] &&
+         (!yuna.gesto || yuna.gesto.n !== "desenhar"))
+        yuna.gesto = { n:"desenhar", desde: agora };
+      if(!yuna.querDesenhar && yuna.gesto && yuna.gesto.n === "desenhar")
+        yuna.gesto = null;
+      const q=yuna.gesto&&gestos[yuna.gesto.n];
+      if(q&&q.length){
+        const MS=520, v=[0,1,2,3,2,1];   // vai e volta, igual ao do gato
+        const i=Math.floor((agora-yuna.gesto.desde)/MS);
+        /* DESENHAR NAO ACABA EM DUAS VOLTAS.
+           Todo gesto daqui e um floreio de dois ciclos — acenar, fazer carinho
+           no gato. Desenhar e o oposto: e o que ela FICA fazendo, por uma hora,
+           enquanto a obra nasce no painel ao lado. Se expirasse, ela voltaria a
+           ficar em pe no meio do tapete com a tela desenhando sozinha. */
+        if(yuna.gesto.n==="desenhar") sprite=q[v[Math.max(0,i)%v.length]]||sprite;
+        else if(i>=v.length*2) yuna.gesto=null;        // duas voltas e acabou
+        else sprite=q[v[Math.max(0,i)%v.length]]||sprite;
+      } else if(yuna.gesto) yuna.gesto=null;
+    }
+    if(!sprite||!anc.has(sprite)) sprite=parada["dir-1"];
+    const a=anc.get(sprite);
+
+    /* PROFUNDIDADE COM DOIS ATORES: quem esta mais atras e desenhado antes,
+       e as pecas entram ENTRE eles conforme a base. Antes o gato era
+       desenhado sempre antes das pecas com base > pe DELA, e por isso sumia
+       atras de movel que estava na verdade atras dele. */
+    const spGato = jiji ? passoDoGato(agora,dt) : null;
+    if(jiji){
+      const yG=jiji.y, yE=pe.y;
+      if(yG<=yE){
+        desenharGato(spGato);
+        for(const m of pecas) if(m.b>yG&&m.b<=yE) ctx.drawImage(m.img,m.x,m.y);
+        ctx.drawImage(sprite,pe.x-a.x,pe.y-a.y);
+        for(const m of pecas) if(m.b>yE) ctx.drawImage(m.img,m.x,m.y);
+      } else {
+        ctx.drawImage(sprite,pe.x-a.x,pe.y-a.y);
+        for(const m of pecas) if(m.b>yE&&m.b<=yG) ctx.drawImage(m.img,m.x,m.y);
+        desenharGato(spGato);
+        for(const m of pecas) if(m.b>yG) ctx.drawImage(m.img,m.x,m.y);
+      }
+    } else {
+      ctx.drawImage(sprite,pe.x-a.x,pe.y-a.y);
+      for(const m of pecas) if(m.b>pe.y) ctx.drawImage(m.img,m.x,m.y);
+    }
+
+    furarMonitor(); desenharCamera(agora); desenharFala(agora); desenharDialogo(agora); desenharMarca(dt); desenharVersao();
+
+    lPos.textContent=(pe.x*D.K)+", "+(pe.y*D.K);
+    lEstado.textContent=yuna.rota.length>1
+      ?(yuna.indoPara?"indo dormir":"andando"):"parada";
+    lQuadro.textContent=yuna.rota.length>1?(n+1)+"/6":"—";
+    requestAnimationFrame(quadro);
+  }
+
+  function desenharVersao(){
+    /* o carimbo e ferramenta de desenvolvimento: na live nao aparece */
+    if(typeof motor !== "undefined" && motor.ligado) return;
+    ctx.save();
+    ctx.font="700 13px 'IBM Plex Mono',monospace";
+    ctx.textAlign="left";
+    ctx.fillStyle="rgba(255,79,163,.9)";
+    ctx.fillText("v85",10,H-12);
+    ctx.restore();
+  }
+  function desenharMarca(dt){
+    if(!yuna.marca) return;
+    yuna.marca.t+=dt;
+    if(yuna.marca.t>1.2){yuna.marca=null;return;}
+    const f=1-yuna.marca.t/1.2;
+    ctx.strokeStyle=yuna.marca.cor; ctx.globalAlpha=f; ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.ellipse(yuna.marca.x,yuna.marca.y,10*(1+yuna.marca.t),5*(1+yuna.marca.t),0,0,Math.PI*2);
+    ctx.stroke(); ctx.globalAlpha=1;
+  }
+  requestAnimationFrame(quadro);
+})();
+</script>
