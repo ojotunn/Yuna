@@ -155,7 +155,12 @@
   /* O CONSOLE DA BANCADA. Herda .navegador inteiro e ocupa O MESMO lugar dele:
      programar e navegar sao acoes diferentes e ela so faz uma por turno, entao
      os dois nunca abrem juntos. A tela mostra o que ela esta fazendo agora. */
-  .bancada .cod{flex:1;margin:0;padding:.75em .95em;overflow:hidden;
+  /* `min-height:0` E OBRIGATORIO. Item de flex-column nao encolhe abaixo do
+     proprio conteudo por padrao: sem isto o <pre> com codigo longo ESTOURA a
+     moldura do painel em vez de ser cortado. E `font` explicito porque a regra
+     do user-agent `pre{font-family:monospace}` e aplicada direto no elemento e
+     vence a fonte que so chega por heranca do body. */
+  .bancada .cod{flex:1;min-height:0;margin:0;padding:.75em .95em;overflow:hidden;
     font:500 11px/1.5 "IBM Plex Mono",monospace;color:#e2d6f2;
     white-space:pre-wrap;word-break:break-word;background:#0a0810}
   .quadro{position:relative;width:100%;height:100%}
@@ -925,7 +930,12 @@ function acharCaminho(livre,ox,oy,dx,dy){
   const ROBO = { x: 878, y: 273, w: 27 };      // o robo em coordenadas da tela
 
   function balaoEm(texto, ancoraX, topoY, paraEsquerda, ap){
-    const txt = String(texto || "").trim();
+    /* CORTA ANTES DE MEDIR. `pergunta` vem cortada em 600 pelo motor, mas
+       `resposta` NAO tem corte nenhum e pode chegar com milhares de
+       caracteres — e `quebrar()` percorre TODAS as palavras a cada quadro,
+       a 60 por segundo, pra jogar fora tudo depois da quarta linha. */
+    let txt = String(texto || "").trim();
+    if(txt.length > 260) txt = txt.slice(0, 259).replace(/\s+\S*$/, "") + "…";
     if(!txt || ap <= 0.01) return;
     const cor = Math.round(ALT * 0.085);
     ctx.save();
@@ -1236,8 +1246,11 @@ function acharCaminho(livre,ox,oy,dx,dy){
        ordem ja custou meio dia duas vezes: o painel abria com ela ainda
        atravessando o quarto. */
     const bt = a.bancadaTela;
-    const programando = !!(bt && bt.quando && (Date.now() - bt.quando) < 75000
-                           && yuna.estacao === "mesa");
+    /* NAO AMARRA AO MOVEL. O `place` que ELA escolhe vence a tabela do motor:
+       ela pode escrever codigo do sofa, e amarrar o console a "mesa" faria o
+       painel sumir justamente quando ela decide trabalhar de outro canto.
+       O navegador continua preso a mesa — e la que ele existe. */
+    const programando = !!(bt && bt.quando && (Date.now() - bt.quando) < 75000);
     bancadaNaTela(programando, bt);
     navegadorNaTela(a.liveView || null, yuna.estacao === "mesa" && !programando);
 

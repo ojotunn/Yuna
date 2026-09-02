@@ -2398,6 +2398,10 @@ function marcarCena(agent, tipo, texto, escolhido = null) {
   if (!ACOES_VALIDAS.has(tipo)) return;
   /* pedido de cama com ela acordada e ignorado: cai no lugar padrao da acao */
   if (escolhido && SO_PARA_DORMIR.has(escolhido)) escolhido = null;
+  /* CONSULTAR E SEMPRE NO ROBO. O robozinho do Claude mora em cima da caixa;
+     conversar com ele do outro lado do quarto nao seria uma cena, seria um
+     erro — e o dialogo na tela e ancorado nele. Aqui o lugar nao e dela. */
+  if (tipo === "consult") escolhido = null;
   /* O LUGAR QUE ELA PEDIU vence a tabela. Ler no sofa com o celular e ler na
      mesa sao a mesma acao e duas cenas diferentes — quem decide qual e ela. */
   const movel = (escolhido && LUGARES_VALIDOS.has(escolhido))
