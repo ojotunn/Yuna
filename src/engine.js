@@ -947,9 +947,23 @@ function pushDialogue(fromId, toId, text) {
   });
 }
 
+/* QUANTO ELA QUEIMA POR HORA.
+   O erro que isto conserta: `state.spentReal` e da VIDA INTEIRA (o checkpoint
+   restaura), mas `state.startedAt` e do ULTIMO BOOT (loadCheckpoint pula ele de
+   proposito). Dividir um pelo outro dava, logo apos cada restart, ~30x a queima
+   real — e a sobrevida despencava pra poucas horas, ligando o alarme da casa
+   sem motivo nenhum na frente de quem esta assistindo.
+   O relogio certo pro gasto vitalicio e `totals.since`, que nasce no primeiro
+   boot e sobrevive a tudo. Uma funcao so, pros dois lugares nao divergirem de
+   novo — era exatamente assim que estavam. */
+function queimaPorHora() {
+  const horas = Math.max((Date.now() - (totals.since ?? state.startedAt)) / 3.6e6, 1 / 60);
+  const gasto = dinheiro(state.spentReal);
+  return gasto > 0 ? gasto / horas : 0;
+}
+
 function publish() {
-  const hours = Math.max((Date.now() - state.startedAt) / 3.6e6, 1 / 60);
-  const burnPerHour = state.spentReal / hours;
+  const burnPerHour = queimaPorHora();
   const snap = {
     tick: state.tick, day: state.day, season: state.season,
     uptimeMs: Date.now() - state.startedAt,
@@ -5053,8 +5067,7 @@ async function runWorld() {
   }
 
   // SOBREVIDA DA CASA: o tesouro real cruzando limiares.
-  const horasVividas = Math.max((Date.now() - state.startedAt) / 3.6e6, 1 / 60);
-  const gastoPorHora = state.spentReal / horasVividas;
+  const gastoPorHora = queimaPorHora();
   const horas = gastoPorHora > 0 ? state.treasury / gastoPorHora : null;
   for (const e of world.runwayAlarm(horas, { seen: state.eventsSeen })) pushWorld(e);
 
