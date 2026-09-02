@@ -25,7 +25,8 @@ import sys
 
 MARCA = "yuna-live-tela"
 
-BLOCO = """<style data-marca="%s">
+BLOCO = """<meta charset="utf-8" data-marca="%s">
+<style data-marca="%s">
   /* CINEMA: fundo preto, nada alem do quarto, sem rolagem. */
   html,body{margin:0!important;padding:0!important;background:#000!important;
     width:100%%!important;height:100%%!important;overflow:hidden!important}
@@ -91,7 +92,7 @@ BLOCO = """<style data-marca="%s">
   var n = 0, t = setInterval(function(){ encaixar(); if(++n > 20) clearInterval(t); }, 150);
 })();
 </script>
-""" % (MARCA, MARCA)
+""" % (MARCA, MARCA, MARCA)
 
 
 def main(caminho):
