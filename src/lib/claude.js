@@ -342,7 +342,10 @@ export async function consultar(pergunta, contexto = "") {
     }
     const texto = (res.content || []).find((b) => b.type === "text")?.text?.trim() || "";
     if (!texto) return null;
-    return { texto, custo: priceUsage(MODELO_CONSULTOR, res.usage) };
+    /* `.usd` E NAO O OBJETO. priceUsage devolve {usd, inTok, ...}; devolver
+       o objeto aqui fez `spentReal += custo` concatenar "[object Object]"
+       e o gasto acumulado virar string. Todo somador espera numero. */
+    return { texto, custo: priceUsage(MODELO_CONSULTOR, res.usage).usd };
   } catch {
     return null;
   }

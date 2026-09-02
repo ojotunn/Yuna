@@ -651,6 +651,29 @@ function saveCheckpoint() {
 // Restaura POR CIMA dos padroes. Assim um deploy que adiciona campo novo nao
 // quebra com um retrato antigo: o que existe no arquivo vence, o que nao
 // existe fica com o padrao recem-criado.
+/* SO NUMERO PASSA. Qualquer outra coisa vale zero. */
+function dinheiro(v) {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/* RESGATE DO GASTO ACUMULADO.
+   Um bug de 01/09 fez `spentReal` virar uma string assim:
+     "51.72896154999997[object Object]0.143930.1333350.13243..."
+   — o numero bom, o objeto que nao deveria estar la, e as somas seguintes
+   grudadas uma na outra. O dinheiro gasto e real e ja saiu; jogar fora seria
+   mentir no placar. Entao remonto: quebro no marcador do objeto, e os decimais
+   colados quebram antes de cada "0." porque todos comecam assim. */
+function resgatarGasto(v) {
+  if (Number.isFinite(v)) return v;
+  const partes = String(v ?? "").split("[object Object]")
+    .flatMap((p) => p.split(/(?=0\.)/))
+    .map(Number)
+    .filter(Number.isFinite);
+  const total = partes.reduce((a, b) => a + b, 0);
+  return Number.isFinite(total) && total > 0 ? total : 0;
+}
+
 function loadCheckpoint() {
   let raw;
   try { raw = JSON.parse(fs.readFileSync(CHECKPOINT_FILE, "utf8")); }
@@ -666,6 +689,13 @@ function loadCheckpoint() {
   }
   // O relogio do dia volta de onde parou; uma queda nao da dia gratis.
   state.dayStartedAt = raw.dayStartedAt ?? Date.now();
+  /* O retrato pode trazer o gasto corrompido do bug de 01/09. Conserta na
+     entrada: dali pra frente e numero e o alarme de sobrevida volta a tocar. */
+  const antes = state.spentReal;
+  state.spentReal = resgatarGasto(state.spentReal);
+  if (typeof antes !== "number") {
+    log(`Gasto acumulado resgatado -> $${state.spentReal.toFixed(4)}`);
+  }
   return { savedAt: raw.savedAt ?? null, tick: raw.tick ?? 0, day: raw.day ?? 1 };
 }
 
@@ -3663,7 +3693,9 @@ async function apply(agent, action) {
           c.estado = "respondida";
           c.resposta = r.texto;
           c.chegouEm = Date.now();
-          state.spentReal += r.custo ?? 0;
+          /* COAGE. Se algum dia chegar coisa que nao e numero, o gasto
+             acumulado nao vira texto de novo — ele so ignora. */
+          state.spentReal = dinheiro(state.spentReal) + dinheiro(r.custo);
           /* A RESPOSTA TAMBEM. O texto inteiro vai pro feed: e a metade da
              conversa que o publico veio ver. */
           emit("did", agent.id, `the answer came back — ${trim(r.texto, 420)}`);
@@ -5367,7 +5399,7 @@ async function loop() {
     // encerrava a sessao no primeiro ciclo, sem rodar nada.
     if (cfg.maxTicks && state.tick - tickInicial > cfg.maxTicks) {
       emit("system", null,
-        `— TEST SESSION OVER: ${cfg.maxTicks} turns each. Real spend: $${state.spentReal.toFixed(4)}. —`);
+        `— TEST SESSION OVER: ${cfg.maxTicks} turns each. Real spend: $${dinheiro(state.spentReal).toFixed(4)}. —`);
       publish();
       // Sem isto o processo fica vivo depois do fim: o navegador segura o event
       // loop e todo teste deixa um node pendurado.
