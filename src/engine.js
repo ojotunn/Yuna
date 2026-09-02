@@ -4466,6 +4466,29 @@ async function turn(agent) {
         log(`!! o turno enxuto tambem falhou: ${String(e.message).slice(0, 120)}`);
       }
     }
+    /* A SONDA. Uma vez por sessao, na 3a recusa: descobre de que LADO esta o
+       problema em vez de eu continuar chutando qual trecho e. */
+    if (state.refusalStreak === 3 && !state.sondaFeita) {
+      state.sondaFeita = true;
+      const provar = async (rot, sys, sit) => {
+        try {
+          const r = await decide({ model: shift.model, effort: shift.effort, system: sys, situation: sit });
+          state.treasury -= r.cost.usd;
+          totals.spentReal += r.cost.usd;
+          log(`   SONDA ${rot}: ${r.refused ? "RECUSOU" : "passou"}`);
+          return !r.refused;
+        } catch (e) {
+          log(`   SONDA ${rot}: erro ${String(e.message).slice(0, 80)}`);
+          return null;
+        }
+      };
+      const sitMinima = "Nothing is happening. Answer with the action `rest` and reason \"probe\".";
+      const sysMinimo = "You are an agent in a simulation. Answer with the JSON action you are given.";
+      const a = await provar("A (system real + situacao trivial)", agent.system, sitMinima);
+      const b = await provar("B (system trivial + situacao real)", sysMinimo, situation);
+      log(`   SONDA => system=${a === null ? "?" : a ? "ok" : "CULPADO"} situacao=${b === null ? "?" : b ? "ok" : "CULPADO"}`);
+    }
+
     if (state.refusalStreak >= 6) {
       emit("system", null,
         `ENGINE STOPPED — ${state.refusalStreak} turns in a row came back refused, trimmed and not. ` +
