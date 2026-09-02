@@ -1618,20 +1618,31 @@ function situationFor(agent, shift = { label: "fixed" }) {
         (c) => c.mint === cfg.liveChatMint && c.agent === agent.id);
       if (CALLOUTS && !jaChamou) {
         L.push("");
-        L.push("AND MAKE ONE CALL ON IT, with `callout` — market = the mint above, `thesis` =");
-        L.push("why. One, not a habit. The house puts a line ahead of whatever you write:");
-        L.push('"I am the dev of this coin and I hold it." That is not negotiable and it is not');
-        L.push("there to protect the coin — your wallet is public, and someone finding out on");
-        L.push("their own is worse than you saying it. Write the thesis you would write for");
-        L.push("somebody else's coin, and do not write a word you would not defend if it falls.");
+        L.push("AND PUT YOUR NAME ON IT ONCE, with `callout` — market = the mint above,");
+        L.push("`thesis` = what you are actually building here. The house decided this too, and");
+        L.push("for the same reason as the $10: a dev who will not put her name next to her own");
+        L.push("coin has said something about it louder than any call could.");
+        L.push('The house writes the first line for you: "I am the dev of this coin and I hold');
+        L.push('it." Not negotiable, and not there to protect the coin — your wallet is public,');
+        L.push("and someone working it out on their own is worse than you saying it.");
+        L.push("One call, not a habit. Write nothing you would not defend if it falls, and do");
+        L.push("not write a price, a target, or a reason for anyone else to buy — that part of");
+        L.push("the rule does not move.");
       }
     } else if (posto != null) {
       const falta = Math.max(0, ALVO_MOEDA_USD - posto);
       if (posto > 0) {
-        L.push(`You have put $${posto.toFixed(2)} of your own money into it, and it should be`);
-        L.push(`$${ALVO_MOEDA_USD}. Buy $${falta.toFixed(2)} more with \`propose\` + \`execute\` (venue "pump",`);
-        L.push("market = the mint above). The general size limit does not apply to your own coin —");
-        L.push("holding it is not a bet, it is where you stand.");
+        /* NAO E UMA OPERACAO, e ela precisa ouvir isso com todas as letras.
+           Ela matou a ordem dos $7,75 aplicando a propria regra de nao
+           aumentar posicao por inquietacao — regra boa, premissa errada. O
+           prompt pedia com vocabulario de trade, entao ela julgou como trade. */
+        L.push(`THIS IS NOT A TRADE, and do not size it like one. The house decided that its`);
+        L.push(`dev holds $${ALVO_MOEDA_USD} of it. You have $${posto.toFixed(2)} in. Put in $${falta.toFixed(2)} more —`);
+        L.push('`propose` + `execute`, venue "pump", market = the mint above.');
+        L.push("It is not a position, it is not scored, it does not count against your sizing");
+        L.push("rules and it is not you adding to a winner out of restlessness. You are not");
+        L.push("entering it to exit it — there is no exit plan because there is no exit. It is");
+        L.push("what the person whose name is on a coin holds of it.");
       } else {
         L.push(`YOU OWN NONE OF IT, and people in that room can see that. Buy $${ALVO_MOEDA_USD} of it`);
         L.push("with `propose` + `execute` (venue \"pump\", market = the mint above) and hold it.");
@@ -3048,7 +3059,15 @@ async function apply(agent, action) {
       // HOUSE_DEVIL_ADVOCATE=0 desliga. Existe porque o probe offline chamou
       // o advogado sem querer e QUEIMOU credito de API num teste que se anuncia
       // como sem custo (30/08/2026).
-      if (SOZINHA && process.env.HOUSE_DEVIL_ADVOCATE !== "0") await objecaoDaCasa(agent, p);
+      /* O ADVOGADO DO DIABO NAO OPINA SOBRE A MOEDA DELA.
+         Ele existe pra derrubar APOSTA ruim, e o argumento que ele sabe fazer
+         e sempre o mesmo: "voce nao tem como sair disso". Numa moeda que ela e
+         a dev e que ela nao pretende vender, isso nao e um risco, e a
+         descricao do que ela esta fazendo. Ele objetou exatamente isso hoje e
+         deu a ela o argumento pra matar a propria ordem. */
+      const aPropria = p.venue === "pump" && p.market === cfg.liveChatMint;
+      if (SOZINHA && !aPropria && process.env.HOUSE_DEVIL_ADVOCATE !== "0")
+        await objecaoDaCasa(agent, p);
       return;
     }
 
