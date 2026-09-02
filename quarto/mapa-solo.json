@@ -1,0 +1,262 @@
+{
+  "_comentario": "gerado por scripts/fisica-solo.py — fisica do quarto solo; pecas com sprite/pos/base p/ redesenho por profundidade no palco",
+  "cenario": "CENARIO-SOLO.png",
+  "fundo_vazio": "QUARTO-SOLO-v5-vazio.png",
+  "piso_mascara": "piso-solo.png",
+  "altura_corpo": 340,
+  "pecas": {
+    "mesa_setup": {
+      "sprite": "pecas/mesa_setup-r0.png",
+      "flip": false,
+      "pos": [
+        1174,
+        333
+      ],
+      "pe": [
+        1380,
+        830
+      ],
+      "base": 830,
+      "camada": "padrao"
+    },
+    "tapete": {
+      "sprite": "pecas/tapete-r0.png",
+      "flip": false,
+      "pos": [
+        756,
+        942
+      ],
+      "pe": [
+        1030,
+        1288
+      ],
+      "base": 1288,
+      "camada": "chao"
+    },
+    "cama": {
+      "sprite": "pecas/cama-r0.png",
+      "flip": false,
+      "pos": [
+        82,
+        626
+      ],
+      "pe": [
+        355,
+        1109
+      ],
+      "base": 1109,
+      "camada": "padrao"
+    },
+    "puff_pata": {
+      "sprite": "pecas/puff_pata-r0.png",
+      "flip": false,
+      "pos": [
+        1006,
+        721
+      ],
+      "pe": [
+        1096,
+        890
+      ],
+      "base": 890,
+      "camada": "padrao"
+    },
+    "torre_gato_2": {
+      "sprite": "pecas/torre_gato_2-r0.png",
+      "flip": false,
+      "pos": [
+        488,
+        569
+      ],
+      "pe": [
+        553,
+        729
+      ],
+      "base": 729,
+      "camada": "padrao"
+    },
+    "lixeira": {
+      "sprite": "pecas/lixeira-r0.png",
+      "flip": false,
+      "pos": [
+        2029,
+        757
+      ],
+      "pe": [
+        2070,
+        879
+      ],
+      "base": 879,
+      "camada": "padrao"
+    },
+    "geladeira": {
+      "sprite": "pecas/geladeira-r0.png",
+      "flip": false,
+      "pos": [
+        2217,
+        315
+      ],
+      "pe": [
+        2309,
+        796
+      ],
+      "base": 796,
+      "camada": "padrao"
+    },
+    "cozinha": {
+      "sprite": "pecas/cozinha-r0.png",
+      "flip": false,
+      "pos": [
+        2279,
+        244
+      ],
+      "pe": [
+        2485,
+        894
+      ],
+      "base": 894,
+      "camada": "padrao"
+    },
+    "sofa": {
+      "sprite": "pecas/sofa-r0.png",
+      "flip": false,
+      "pos": [
+        1434,
+        936
+      ],
+      "pe": [
+        1676,
+        1311
+      ],
+      "base": 1311,
+      "camada": "padrao"
+    },
+    "tv_rack": {
+      "sprite": "pecas/tv_rack-r2.png",
+      "flip": false,
+      "pos": [
+        1955,
+        1057
+      ],
+      "pe": [
+        2065,
+        1334
+      ],
+      "base": 1334,
+      "camada": "padrao"
+    },
+    "roupas_rosa": {
+      "sprite": "pecas/roupas_rosa-r0.png",
+      "flip": false,
+      "pos": [
+        556,
+        1086
+      ],
+      "pe": [
+        665,
+        1228
+      ],
+      "base": 1228,
+      "camada": "padrao"
+    },
+    "caixa_fechada": {
+      "sprite": "pecas/caixa_fechada-r0.png",
+      "flip": false,
+      "pos": [
+        1694,
+        580
+      ],
+      "pe": [
+        1783,
+        763
+      ],
+      "base": 763,
+      "camada": "padrao"
+    },
+    "fable": {
+      "_o_que_e": "o robozinho do Claude em cima da caixa fechada; ela vem ate aqui pra consultar o Fable",
+      "sprite": "pecas/fable-r0.png",
+      "flip": false,
+      "pos": [
+        1756,
+        546
+      ],
+      "pe": [
+        1784,
+        764
+      ],
+      "base": 764,
+      "camada": "padrao"
+    },
+    "caixa_aberta": {
+      "sprite": "pecas/caixa_aberta-r0.png",
+      "flip": false,
+      "pos": [
+        1813,
+        647
+      ],
+      "pe": [
+        1923,
+        827
+      ],
+      "base": 827,
+      "camada": "padrao"
+    },
+    "caixa_pequena": {
+      "sprite": "pecas/caixa_pequena-r0.png",
+      "flip": false,
+      "pos": [
+        1639,
+        590
+      ],
+      "pe": [
+        1695,
+        696
+      ],
+      "base": 696,
+      "camada": "padrao"
+    },
+    "tenis": {
+      "sprite": "pecas/tenis-r0.png",
+      "flip": false,
+      "pos": [
+        885,
+        1258
+      ],
+      "pe": [
+        930,
+        1330
+      ],
+      "base": 1330,
+      "camada": "padrao"
+    },
+    "n3ds": {
+      "sprite": "pecas/n3ds-r0.png",
+      "flip": false,
+      "pos": [
+        907,
+        795
+      ],
+      "pe": [
+        959,
+        894
+      ],
+      "base": 894,
+      "camada": "padrao"
+    },
+    "pesinhos": {
+      "sprite": "pecas/pesinhos-r0.png",
+      "flip": false,
+      "pos": [
+        1117,
+        1246
+      ],
+      "pe": [
+        1176,
+        1325
+      ],
+      "base": 1325,
+      "camada": "padrao"
+    }
+  }
+}

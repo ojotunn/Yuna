@@ -1,0 +1,95 @@
+{
+  "_comentario": "fontes de luz do quarto — o palco ao vivo desenha a cada quadro (blend screen); gerado por gerar-luzes.py",
+  "fontes": {
+    "neon_gato": {
+      "pos": [
+        1030,
+        300
+      ],
+      "raio": [
+        480,
+        380
+      ],
+      "cor": [
+        255,
+        70,
+        170
+      ],
+      "forca": 150,
+      "liga_com": "sempre",
+      "poca_chao": {
+        "pos": [
+          1030,
+          700
+        ],
+        "raio": [
+          700,
+          320
+        ],
+        "forca": 70
+      }
+    },
+    "janela": {
+      "pos": [
+        600,
+        380
+      ],
+      "raio": [
+        360,
+        300
+      ],
+      "cor": [
+        90,
+        190,
+        255
+      ],
+      "forca": 110,
+      "liga_com": "noite",
+      "poca_chao": {
+        "pos": [
+          610,
+          700
+        ],
+        "raio": [
+          420,
+          220
+        ],
+        "forca": 55
+      }
+    },
+    "cozinha": {
+      "pos": [
+        2470,
+        620
+      ],
+      "raio": [
+        400,
+        300
+      ],
+      "cor": [
+        60,
+        220,
+        200
+      ],
+      "forca": 110,
+      "liga_com": "sempre"
+    },
+    "monitor": {
+      "pos": [
+        955,
+        450
+      ],
+      "raio": [
+        190,
+        150
+      ],
+      "cor": [
+        255,
+        150,
+        220
+      ],
+      "forca": 120,
+      "liga_com": "trabalhando"
+    }
+  }
+}

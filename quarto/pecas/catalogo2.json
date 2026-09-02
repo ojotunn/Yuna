@@ -1,0 +1,199 @@
+{
+  "_comentario": "catalogo v2 — pecas rotacionaveis, ancora no PE (centro-baixo). Gerado por scripts/cortar-rotacoes.py",
+  "fundo": "QUARTO-SOLO-v5-vazio.png",
+  "pecas": {
+    "planta_chao": {
+      "pe": [
+        145,
+        949
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "prateleira_alta": {
+      "pe": [
+        385,
+        459
+      ],
+      "vistas": 1,
+      "camada": "parede"
+    },
+    "mesa_setup": {
+      "pe": [
+        490,
+        879
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "cadeira": {
+      "pe": [
+        552,
+        894
+      ],
+      "vistas": 4,
+      "camada": "padrao",
+      "dentro": false
+    },
+    "planta_vaso": {
+      "pe": [
+        700,
+        644
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "tapete": {
+      "pe": [
+        1030,
+        1288
+      ],
+      "vistas": 4,
+      "camada": "chao"
+    },
+    "torre_gato_1": {
+      "pe": [
+        1280,
+        869
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "cama": {
+      "pe": [
+        1537,
+        844
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "prateleira_livros": {
+      "pe": [
+        1705,
+        324
+      ],
+      "vistas": 1,
+      "camada": "parede"
+    },
+    "planta_pendurada": {
+      "pe": [
+        1857,
+        419
+      ],
+      "vistas": 1,
+      "camada": "parede"
+    },
+    "puff_pata": {
+      "pe": [
+        1492,
+        974
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "torre_gato_2": {
+      "pe": [
+        665,
+        705
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "lixeira": {
+      "pe": [
+        2070,
+        879
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "geladeira": {
+      "pe": [
+        2200,
+        864
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "cozinha": {
+      "pe": [
+        2485,
+        894
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "sofa": {
+      "pe": [
+        1722,
+        1319
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "tv_rack": {
+      "pe": [
+        2065,
+        1334
+      ],
+      "vistas": 4,
+      "camada": "padrao"
+    },
+    "roupas_rosa": {
+      "pe": [
+        640,
+        1160
+      ],
+      "vistas": 1
+    },
+    "roupas_escuras": {
+      "pe": [
+        1210,
+        1050
+      ],
+      "vistas": 1
+    },
+    "caixa_fechada": {
+      "pe": [
+        700,
+        890
+      ],
+      "vistas": 1
+    },
+    "caixa_aberta": {
+      "pe": [
+        2210,
+        1180
+      ],
+      "vistas": 1
+    },
+    "caixa_pequena": {
+      "pe": [
+        790,
+        915
+      ],
+      "vistas": 1
+    },
+    "tenis": {
+      "pe": [
+        930,
+        1330
+      ],
+      "vistas": 1
+    },
+    "n3ds": {
+      "pe": [
+        1190,
+        940
+      ],
+      "vistas": 1
+    },
+    "pesinhos": {
+      "pe": [
+        1565,
+        990
+      ],
+      "vistas": 1
+    }
+  }
+}
