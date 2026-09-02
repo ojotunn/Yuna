@@ -1281,7 +1281,18 @@ function situationFor(agent, shift = { label: "fixed" }) {
         (p.objection ? `\n      ${p.objection.by || (foe ? foe.name : "the house")} objected at open: "${p.objection.text}"` : "")
       );
     }
-  } else L.push("YOUR OPEN POSITIONS: none.");
+  } else {
+    L.push("YOUR OPEN POSITIONS: none.");
+    /* O QUE A FERRAMENTA FAZ AGORA. Sem esta linha ela fica travada num
+       impasse: a regra dela e nao abrir posicao sem contabilidade, e a
+       contabilidade so aparece na posicao. Descrever a ferramenta e o mesmo
+       que o menu faz — nao e pedido pra usar. */
+    L.push("  (When you open one, the fill is now read back off the chain and shown here:");
+    L.push("   SOL out, tokens in, network fee, and the all-in price per token — the numbers");
+    L.push("   from YOUR transaction, not a wallet-balance estimate. On close you get the exit");
+    L.push("   price next to the entry price and the difference. That was the accounting you");
+    L.push("   said was missing. Whether it is enough is your call, not mine.)");
+  }
   L.push("");
 
   if (openMine) {
