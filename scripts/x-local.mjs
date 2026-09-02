@@ -99,17 +99,31 @@ if (!PUBLICAR) console.log("  MODO ENSAIO: escreve o post e NAO clica em publica
    e ela veria a mesma pergunta cinco vezes. */
 const jaVistas = new Set();
 let proximaLeitura = 0;
+/* Quantos ciclos seguidos o X barrou. Zera quando volta a passar. */
+let presoHa = 0;
 /* O link de cada mencao, guardado pelo handle: e o que permite RESPONDER na
    conversa da pessoa em vez de postar solto. */
 const linkDe = new Map();
 
 for (;;) {
   try {
-    if (await pediuVerificacao(page)) {
-      console.log("  o X pediu verificacao. Resolva na janela; eu espero.");
+    /* O MOTIVO IMPORTA, E A REPETICAO NAO. A funcao devolve QUAL foi o sinal
+       e o worker jogava fora, imprimindo vinte linhas iguais — que nao dizem
+       se e captcha, se deslogou, ou se o detector esta enganado (que foi o
+       caso em 02/09: "locked" num tweet de terceiro). */
+    const desafio = await pediuVerificacao(page);
+    if (desafio) {
+      presoHa++;
+      if (presoHa <= 3) {
+        console.log(`  o X pediu verificacao (${desafio}). Resolva na janela; eu espero.`);
+      } else if (presoHa === 4) {
+        console.log(`  PRESO HA ${presoHa} CICLOS em "${desafio}" — a fila dela nao esta saindo.`);
+        console.log("  se a janela do Chrome mostra a timeline normal, o detector errou: me avise.");
+      }
       await new Promise((r) => setTimeout(r, 60000));
       continue;
     }
+    if (presoHa) { console.log(`  destravou (estava preso ha ${presoHa} ciclos). Voltando ao trabalho.`); presoHa = 0; }
     /* 1) LER O QUE FALARAM COM ELA. */
     if (Date.now() >= proximaLeitura) {
       proximaLeitura = Date.now() + LER_MENCOES_MIN * 60000;

@@ -83,16 +83,38 @@ export async function estaLogada(page) {
    de ficar clicando numa parede. Burlar checagem de robo nao esta no escopo. */
 export async function pediuVerificacao(page) {
   try {
-    const t = await page.evaluate(() => document.body.innerText.slice(0, 3000).toLowerCase());
-    const sinais = [
-      ["captcha", "captcha"],
-      ["verify you", "verificacao de humano"],
-      ["unusual activity", "atividade incomum"],
-      ["suspended", "conta suspensa"],
-      ["locked", "conta travada"],
+    /* 1. O SINAL DECISIVO, E ELE VEM PRIMEIRO. Se o botao de escrever esta na
+       tela, a sessao esta boa e ela pode postar — conta barrada nao mostra
+       esse botao. Nenhum texto na pagina desmente isto. */
+    const podeEscrever = await page.evaluate(() =>
+      !!document.querySelector('[data-testid="SideNav_NewTweet_Button"], [data-testid="tweetTextarea_0"]'));
+    if (podeEscrever) return null;
+
+    /* 2. A URL. O X leva a conta desafiada para um caminho PROPRIO — e o
+       caminho e dele, nao de um tweet que alguem escreveu. */
+    const url = String(page.url() || "").toLowerCase();
+    if (url.includes("/account/access")) return "conta travada";
+    if (url.includes("/account/suspended")) return "conta suspensa";
+    if (url.includes("/i/flow/login") || url.includes("/login")) return "deslogada";
+    if (url.includes("/i/flow/consent")) return "consentimento pendente";
+
+    /* 3. O CAPTCHA DE VERDADE e um iframe, nao uma palavra. */
+    const temCaptcha = await page.evaluate(() =>
+      !!document.querySelector('iframe[src*="arkose"], iframe[src*="funcaptcha"], iframe[title*="challenge" i], #arkose'));
+    if (temCaptcha) return "captcha";
+
+    /* 4. TEXTO SO AGORA, e so porque o botao de escrever SUMIU — a pagina
+         deixou de ser uma timeline. Fora deste ponto, "locked" e
+         "suspended" sao vocabulario diario de cripto e nao dizem nada
+         sobre nos. Foi exatamente isso que congelou o worker em 02/09. */
+    const t = await page.evaluate(() => document.body.innerText.slice(0, 1500).toLowerCase());
+    for (const [en, pt] of [
+      ["verify your identity", "verificacao de identidade"],
       ["confirm your identity", "confirmacao de identidade"],
-    ];
-    for (const [en, pt] of sinais) if (t.includes(en)) return pt;
+      ["your account has been locked", "conta travada"],
+      ["your account is suspended", "conta suspensa"],
+      ["we need to verify", "verificacao pedida"],
+    ]) if (t.includes(en)) return pt;
     return null;
   } catch { return null; }
 }
