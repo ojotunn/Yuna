@@ -691,6 +691,15 @@ function loadCheckpoint() {
   state.dayStartedAt = raw.dayStartedAt ?? Date.now();
   /* O retrato pode trazer o gasto corrompido do bug de 01/09. Conserta na
      entrada: dali pra frente e numero e o alarme de sobrevida volta a tocar. */
+  /* ALUGUEL DESLIGADO: a divida que sobrou do modelo antigo nao fica pendurada
+     no retrato. Sem mesa de trabalho ela nunca seria abatida, e um numero que
+     so sobe e que ninguem pode mexer nao mede nada. */
+  if (!cfg.rentEnabled) {
+    for (const id of ORDER) {
+      const a = state.agents[id];
+      if (a && a.arrears) { a.arrears = 0; a.status = "solvent"; }
+    }
+  }
   const antes = state.spentReal;
   state.spentReal = resgatarGasto(state.spentReal);
   if (typeof antes !== "number") {
@@ -1238,11 +1247,13 @@ function situationFor(agent, shift = { label: "fixed" }) {
   if (aperto) {
     L.push(`YOUR WALLET: $${agent.wallet.toFixed(2)} — the real balance of your own Solana wallet,`);
     L.push("right now. There is no play money here. What you see is what you can lose.");
-    if (agent.arrears > 0)
+    if (cfg.rentEnabled && agent.arrears > 0)
       L.push(`The house is running $${cash(agent.arrears)} ahead of what you brought in today.`,
              "Nobody is coming to collect and nobody gets evicted. It is a number on a board, and",
              "the board exists so the day has a shape — not so you spend the day afraid of it.");
-    L.push(`Day P&L: ${agent.dayPnl >= 0 ? "+" : ""}$${agent.dayPnl.toFixed(2)} · rent all-time: $${cash(agent.spent.rent)} · fees: $${agent.spent.fees.toFixed(2)}`);
+    L.push(`Day P&L: ${agent.dayPnl >= 0 ? "+" : ""}$${agent.dayPnl.toFixed(2)}` +
+      (cfg.rentEnabled ? ` · rent all-time: $${cash(agent.spent.rent)}` : "") +
+      ` · fees: $${agent.spent.fees.toFixed(2)}`);
     L.push(`Max per position right now: $${teto} (${agent.maxTradePct}%)`);
     L.push(`Record: ${agent.stats.trades} trades, ${agent.stats.wins}W/${agent.stats.losses}L`);
   } else {
@@ -1250,9 +1261,12 @@ function situationFor(agent, shift = { label: "fixed" }) {
       `${agent.stats.trades} trades ${agent.stats.wins}W/${agent.stats.losses}L · ` +
       `day ${agent.dayPnl >= 0 ? "+" : ""}$${agent.dayPnl.toFixed(2)}`);
     // Mesmo tranquilo ele precisa do numero do dia: e a meta, nao o alarme.
-    if (agent.arrears > 0)
+    /* "Work comes off that" so e verdade quando existe mesa de trabalho.
+       Com SERVICES_ENABLED=0 nao existe, e a frase virava uma tarefa
+       impossivel toda manha. */
+    if (cfg.rentEnabled && agent.arrears > 0)
       L.push(`Owed to the house today: $${cash(agent.arrears)}. Work comes off that.`);
-    else if (agent.arrears < 0)
+    else if (cfg.rentEnabled && agent.arrears < 0)
       L.push(`You are ahead of the house by $${cash(Math.abs(agent.arrears))} — worked past your rent.`);
   }
   if (cfg.interventionsPerDay > 0)
@@ -1264,6 +1278,23 @@ function situationFor(agent, shift = { label: "fixed" }) {
   // manha — e o consumo de API SAI daqui de proposito. O medidor de gasto por
   // turno e da PLATEIA (fica no palco); agente que ve o proprio custo otimiza o
   // proprio custo, e otimizar custo e o mesmo que otimizar silencio.
+  /* SEM SENHORIO. (02/09/2026 — decisao do Michel)
+     O aluguel veio do Conatus, onde dois agentes disputavam trabalho pra abater
+     divida, e a divida era o motor do show. A Yuna nao tem isso: as mesas de
+     trabalho estao desligadas, entao a conta subia $12 por dia sem que ela
+     tivesse UM jeito de abater — e ela lia "Work comes off that" sobre um
+     trabalho que nao existe. Divida sem acao possivel nao e pressao, e ruido.
+
+     O que sobra e verdadeiro e o TESOURO. Ele paga de verdade pra ela pensar e
+     acaba de verdade — isso ela precisa saber. Um senhorio, nao. */
+  if (!cfg.rentEnabled) {
+    L.push(`WHAT KEEPS YOU RUNNING: $${state.treasury.toFixed(2)} left in the treasury.`);
+    L.push("Every turn you take spends a little of it. Nobody charges you rent and nobody");
+    L.push("is owed — but when that number reaches zero, the thinking stops. It is not a");
+    L.push("threat, it is the shape of the room: what you do should be worth what it costs.");
+    L.push("");
+  } else {
+
   const rentFixa = cfg.rentEnabled && cfg.houseBaseDaily > 0;
   const billSoFar = rentFixa
     ? cfg.houseBaseDaily * cfg.rentMultiplier
@@ -1337,6 +1368,7 @@ function situationFor(agent, shift = { label: "fixed" }) {
     L.push(`  ${foe.name} owes $${cash(foe.arrears)} and is one day from eviction. You cannot give them money —` +
       " nobody here can move a cent. What you can give is work, or a warning.");
   L.push("");
+  } // fim do bloco da casa — so existe com aluguel ligado
   if (foe) {
     L.push(`${foe.name.toUpperCase()}'S WALLET: $${foe.wallet.toFixed(2)} · ${foe.stats.wins}W/${foe.stats.losses}L`);
     if (foe.lastJournal) L.push(`${foe.name} is thinking: "${trim(foe.lastJournal, 300)}"`);
@@ -1751,7 +1783,7 @@ function situationFor(agent, shift = { label: "fixed" }) {
     L.push("WHAT YOU ARE BUILDING TOWARD: " + agent.goals.join(" · "));
     L.push("");
   } else {
-    L.push("You have no stated aspiration. A mind that only pays rent is treading water —");
+    L.push("You have no stated aspiration. A mind that only covers its own costs is treading water —");
     L.push("when you know what you actually want, declare it with `aspire`.");
     L.push("");
   }
@@ -1980,7 +2012,7 @@ function situationFor(agent, shift = { label: "fixed" }) {
       " A call every few minutes is noise — spend them on what you actually saw.");
   }
   L.push('  aspire           — `text`: your long-term goals, one per line (max 3). Replaces the old list.');
-  L.push('                     The horizon beyond tonight\'s rent — declare what you are building toward.');
+  L.push('                     The horizon past today — declare what you are building toward.');
   if (BANCO) {
     L.push('  borrow           — petition THE BANK (a human: the keeper of the treasury) for a loan.');
     L.push('                     sizeUsd + reason: a real case — why this amount, what it unlocks, how it');
@@ -4508,7 +4540,7 @@ function buildSystem(agent) {
     "where you re-read the same chart six times and talked about it is, no matter how much",
     "you talked.",
     "",
-    "## A reserve, not just tonight's rent",
+    "## A reserve, not just today",
     "",
     "Rent is a floor, not the game. Clearing it keeps you thinking — it does not mean the",
     "day's money has to be spent. Cash you do not deploy is not idle: it is a reserve, and a",
