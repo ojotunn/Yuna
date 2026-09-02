@@ -155,6 +155,7 @@ const cfg = {
   // muda ate o Michel ligar.
   roomPostEnabled: process.env.ROOM_POST_ENABLED === "1",
   roomPostCooldown: num("ROOM_POST_COOLDOWN_TICKS", 10),
+  roomMaxChars: num("ROOM_MAX_CHARS", 240),
 };
 
 // Mural de bounties (v1 paper). Stand-in de uma fonte externa: uma tarefa e
@@ -196,6 +197,10 @@ const AJUSTES_FILE = () => process.env.AJUSTES_FILE || path.join(DATA, "ajustes.
    mudaria nada — e o Michel passaria o show achando que mudou. */
 export const AJUSTAVEIS = [
   "HOUSE_NOTE", "DAY_HOURS",
+  /* A SALA, ao vivo: o resfriamento depois de uma recusa e o teto de
+     caracteres. reloadLiveConfig ja relia as duas; sem estarem aqui, mandar
+     pelo painel era aceito e nao mudava nada. */
+  "ROOM_POST_COOLDOWN_TICKS", "ROOM_MAX_CHARS",
   "WORLD_EVENT_EVERY_TICKS", "SCHEDULE",
   "MAX_REAL_TRADE_USD", "REAL_TRADING", "LIVE_TRADE", "TRADING_ENABLED",
   "MIN_POOL_USD", "MAX_POOL_PCT", "DAILY_LOSS_LIMIT_PCT",
@@ -306,6 +311,7 @@ function reloadLiveConfig() {
   cfg.roomPostEnabled = b("ROOM_POST_ENABLED", cfg.roomPostEnabled);
   cfg.chatPerTurn = n("CHAT_MSGS_PER_TURN", cfg.chatPerTurn);
   cfg.roomPostCooldown = n("ROOM_POST_COOLDOWN_TICKS", cfg.roomPostCooldown);
+  cfg.roomMaxChars = n("ROOM_MAX_CHARS", cfg.roomMaxChars);
 
   // O RPC e lido de process.env a cada chamada (wallet.js e executor.js), e o
   // ambiente do processo foi congelado no spawn. Escrever aqui e o que permite
@@ -1705,7 +1711,7 @@ function situationFor(agent, shift = { label: "fixed" }) {
        lugar onde a maior mensagem tem 56 e a pump engoliu calada — melhor ela
        saber a forma do lugar do que descobrir por recusa. */
     L.push(`THAT ROOM IS SHORT-FORM. Everything in it is one or two lines — the longest`);
-    L.push(`message on the board right now is 56 characters. Anything much past ${TETO_SALA} gets`);
+    L.push(`message on the board right now is 56 characters. Anything much past ${tetoSala()} gets`);
     L.push("swallowed without a word: the server takes it and shows it to nobody. Write for");
     L.push("that room, not for your journal. One thought, said once, in the space of a");
     L.push("breath. The long version belongs on the stage, where it already goes.");
@@ -2411,7 +2417,8 @@ function agentAddress(agentId) {
    tem 56 caracteres e a mediana 15. Ela mandava 678 e a pump engolia calada —
    ack sim, transmissao nao. 240 e folgado pra sala e curto o bastante pra
    passar; ajustavel se o numero se provar outro. */
-const TETO_SALA = num("ROOM_MAX_CHARS", 240);
+/* Lido de cfg pra poder mudar ao vivo — `num()` congela no boot. */
+const tetoSala = () => cfg.roomMaxChars ?? 240;
 
 async function postToRoom(agent, text) {
   /* NENHUM CAMINHO SAI CALADO. Este `return` tambem era mudo: com o envio
@@ -2446,7 +2453,7 @@ async function postToRoom(agent, text) {
 
   /* CORTA NO FIM DE UMA FRASE, nunca no meio de uma palavra — e so como rede:
      o prompt ja diz a ela que a sala e curta, entao isto quase nunca dispara. */
-  const curto = primeiraFrase(text, TETO_SALA);
+  const curto = primeiraFrase(text, tetoSala());
   if (curto.length < text.length)
     log(`[sala] cortado de ${text.length} para ${curto.length} chars`);
   const r = await chat.sendAs(cfg.liveChatMint, curto, { cookies, address });
