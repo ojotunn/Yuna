@@ -3121,7 +3121,14 @@ async function apply(agent, action) {
          vendedores. Se quase ninguem conseguiu vender, nao ha saida — e uma
          posicao sem saida nao e posicao, e dinheiro perdido com passos extras.
          Vale tambem pro dolar da call, logo abaixo. */
-      if (cfg.realTrading && p.side === "buy") {
+      /* O RAIO-X DA SAIDA NAO VALE PRA MOEDA DELA. Ele reprova moeda de onde
+         ninguem conseguiu sair — que e exatamente a condicao de uma moeda nova
+         cuja dev esta comprando pra segurar. Recusou a compra dela hoje com
+         "only 0 people have sold", que descreve o que ela esta fazendo em vez
+         de um risco que ela esta correndo.
+         O raio-x do MINT, logo acima, continua valendo: aquele e sobre o token
+         poder fazer mal a ela (freeze, transfer hook, taxa), nao sobre saida. */
+      if (cfg.realTrading && p.side === "buy" && p.market !== cfg.liveChatMint) {
         try {
           const rx = await import("./lib/raiox-pump.js");
           const chrome3 = await import("./lib/browser.js");
