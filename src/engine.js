@@ -1247,10 +1247,36 @@ function situationFor(agent, shift = { label: "fixed" }) {
   if (mine.length) {
     L.push("YOUR OPEN POSITIONS:");
     for (const p of mine) {
+      /* O RECIBO DA ENTRADA. Ela pediu isto por escrito e parou de operar
+         sem: preco de execucao, tokens recebidos, taxa. Vem da transacao
+         DELA na corrente, nao de uma estimativa de saldo da carteira. */
+      const rc = p.real?.recibo;
+      /* REESCALA DEPOIS DE VENDA PARCIAL. broker.close encolhe pos.sizeUsd mas
+         o recibo fica inteiro — sem isto ela leria o SOL e os tokens da compra
+         ORIGINAL numa posicao que ja e metade. Mentira no lugar exato que este
+         recurso existe pra tornar verdadeiro. */
+      const fatia = rc && p.sizeOriginal > 0 ? p.sizeUsd / p.sizeOriginal : 1;
+      const parcial = fatia < 0.999;
+      /* E 'NAO SEI' NUNCA VIRA 'ZERO'. Um `?? 0` aqui imprimiria
+         'FILLED: 0.000000 SOL for 0 tokens', que e pior que nao mostrar nada. */
+      const temTudo = rc && rc.solDelta != null && rc.tokenDelta != null;
+      const linhaRecibo = temTudo
+        ? `\n      FILLED: ${(Math.abs(rc.solDelta) * fatia).toFixed(6)} SOL for ` +
+          `${(Math.abs(rc.tokenDelta) * fatia).toLocaleString("en-US")} tokens` +
+          (parcial ? ` (your share of the original fill, after selling part)` : "") +
+          (rc.precoSol ? ` at ${rc.precoSol.toExponential(4)} SOL/token all-in` : "") +
+          `, network fee ${(rc.taxaSol ?? 0).toFixed(6)} SOL` +
+          `\n      (chain numbers for YOUR transaction. all-in means the fee and, on a first buy of a` +
+          `\n       mint, the ~0.002 SOL token-account rent are inside that price)`
+        : (rc || p.real?.signature
+          ? `\n      FILLED: on-chain, but the receipt is incomplete. Treat the fill price as UNKNOWN —` +
+            `\n      do not substitute zero for it.`
+          : "");
       L.push(
         `  [${p.id}] ${p.venue} ${p.market} ${p.side} $${p.sizeUsd.toFixed(2)}` +
         ` · entry mcap ${p.entry.toPrecision(6)} now ${(p.price ?? p.entry).toPrecision(6)}` +
         ` · unrealized ${p.unrealized >= 0 ? "+" : ""}$${p.unrealized.toFixed(2)}` +
+        linhaRecibo +
         `\n      thesis: ${p.thesis} | invalidation: ${p.invalidation}` +
         (p.objection ? `\n      ${p.objection.by || (foe ? foe.name : "the house")} objected at open: "${p.objection.text}"` : "")
       );
@@ -3086,6 +3112,16 @@ async function apply(agent, action) {
           }
           real = { signature: r.signature, url: r.url, spentSol: r.spentSol, status: r.status };
         }
+        /* O RECIBO DA ENTRADA. O preco que ela pagou de verdade, os tokens
+           que recebeu de verdade, a taxa de rede. Sem isto ela tinha um
+           `spentSol` estimado e nada mais — e foi por nao ter isto que ela
+           parou de operar. Falhar aqui nao cancela a compra: o dinheiro ja
+           andou, e recibo faltando e "nao sei", nao "nao aconteceu". */
+        if (real?.signature) {
+          const rec = await onchain.lerRecibo(real.signature, agentAddress(agent.id), p.market)
+            .catch(() => null);
+          if (rec && !rec.erro) real.recibo = rec;
+        }
         // Marca a hora do movimento real: o leitor de saldo usa isto pra nao
         // confundir o dinheiro deles com gorjeta de terceiro.
         if (real) agent.chainTradeAt = Date.now();
@@ -3093,6 +3129,12 @@ async function apply(agent, action) {
       }
 
       const pos = broker.fill(agent, { ...p, objection: p.objection }, verdict, state);
+      /* O TAMANHO DE NASCENCA. broker.close encolhe `sizeUsd` a cada venda
+         parcial, entao sem guardar isto nao ha como reescalar o recibo — e a
+         linha FILLED mostraria a compra inteira numa posicao pela metade.
+         Posicao antiga (de antes disto) fica sem o campo e a reescala vira 1,
+         que e o comportamento de antes: nao piora nada. */
+      pos.sizeOriginal = pos.sizeUsd;
       if (real) pos.real = real;
       // Comprou: o eco de uma moeda que ele OPEROU pesa mais que o de uma que
       // ele so leu — a nota muda o texto do evento.
@@ -3161,13 +3203,47 @@ async function apply(agent, action) {
           });
         }
         if (!r.ok) return emit("denied", agent.id, `THE CHAIN REFUSED THE SELL — ${r.reason}`, { position: pos });
-        // Espera o saldo assentar e mede o que realmente entrou.
-        await new Promise((s) => setTimeout(s, 6000));
-        const depois = (await onchain.getBalances(addr).catch(() => null))?.sol ?? null;
-        const gotSol = antes != null && depois != null ? depois - antes : null;
+
+        /* O RECIBO DA SAIDA, DA PROPRIA TRANSACAO.
+           O jeito antigo (esperar 6s e comparar o saldo) media a carteira, nao
+           a operacao: uma gorjeta caindo nessa janela entrava na conta como se
+           fosse venda. Foi um numero desses que ela tentou reconciliar e achou
+           impossivel — "o round trip parece ter custado $5,80 numa posicao de
+           $2,00, o que e aritmeticamente impossivel".
+           O recibo nao tem essa ambiguidade. O saldo continua como plano B. */
+        let rec = await onchain.lerRecibo(r.signature, addr, pos.market).catch(() => null);
+        /* O RECIBO TEM QUE SER DE UMA VENDA.
+           A assinatura do caminho da TELA vem de um registro pegajoso
+           (ultimaAssinatura): se o clique nao chegou a assinar nada, ele
+           devolve a assinatura ANTERIOR — tipicamente a propria compra de
+           entrada. Sem esta checagem, o recibo da COMPRA entraria como venda,
+           `gotSol` viria negativo e o prejuizo de ida seria contado duas vezes.
+           E a contabilidade imprimiria "IN x to OUT x (+0.0%)": uma auditoria
+           perfeita de uma venda que talvez nem tenha existido.
+           Numa venda os tokens DIMINUEM. Se aumentaram, nao e esta operacao. */
+        if (rec && !rec.erro && rec.tokenDelta > 0) {
+          log(`[venda] o recibo de ${String(r.signature).slice(0, 8)} mostra tokens ENTRANDO — nao e esta venda. Descartado.`);
+          rec = null;
+        }
+        let gotSol = null;
+        if (rec && !rec.erro && rec.solDelta != null) {
+          gotSol = rec.solDelta;
+        } else {
+          await new Promise((s) => setTimeout(s, 6000));
+          const depois = (await onchain.getBalances(addr).catch(() => null))?.sol ?? null;
+          gotSol = antes != null && depois != null ? depois - antes : null;
+        }
+        /* SEM PRECO DO SOL, SEM CONVERSAO. solPriceUsd() devolve 0 quando o
+           cache nunca encheu (motor recem-subido + feed de preco fora). Com
+           zero, `gotSol * 0` vira 0 — e `0 != null` e verdadeiro, entao o
+           bloco de baixo entrava e sobrescrevia o realizado com ZERO, dizendo
+           `fromChain: true`. A compra ja tinha esta guarda; a venda nao.
+           E o preco viaja junto: chamar solPriceUsd() de novo la embaixo podia
+           pegar uma cotacao diferente e misturar as duas na mesma conta. */
         realSell = {
-          signature: r.signature, url: r.url, pct,
-          gotSol, gotUsd: gotSol != null ? gotSol * solUsd : null,
+          signature: r.signature, url: r.url, pct, solUsd,
+          gotSol, gotUsd: (gotSol != null && solUsd > 0) ? gotSol * solUsd : null,
+          recibo: rec && !rec.erro ? rec : null,
         };
         // Mesma marca da compra: o dinheiro da venda voltando NAO e gorjeta.
         // Aqui e ainda mais importante — a venda e justamente o que faz a
@@ -3175,6 +3251,14 @@ async function apply(agent, action) {
         agent.chainTradeAt = Date.now();
       }
 
+      /* O TAMANHO DE ANTES. broker.close ENCOLHE a posicao na venda parcial
+         (`pos.sizeUsd -= portion`), entao ler `pos.sizeUsd` depois dele da o
+         que SOBROU, nao o que era. A conta de custo la embaixo fazia
+         fatia/resto em vez de fatia/original: vender $9,99 de uma posicao de
+         $10 dava fracao 999, e o custo da entrada era multiplicado por 999.
+         Numero impossivel, carimbado como vindo da corrente — exatamente a
+         classe de numero que fez ela parar de operar. */
+      const tamanhoAntes = pos.sizeUsd;
       const done = broker.close(agent, pos, state, action.reason ?? "", closeUsd);
       // Vendeu: o retrato volta a ser o de AGORA. E daqui que sai o melhor eco
       // do projeto — "esta +48% desde que voce cortou".
@@ -3182,8 +3266,21 @@ async function apply(agent, action) {
       if (realSell) {
         done.real = realSell;
         // O que a corrente diz vence o que a planilha calculou.
-        if (realSell.gotUsd != null) {
-          const custo = (pos.real?.spentSol ?? 0) * (await solPriceUsd()) * (done.sizeUsd / (pos.sizeUsd || done.sizeUsd));
+        if (realSell.gotUsd != null && realSell.solUsd > 0) {
+          /* O CUSTO SAI DO RECIBO DA ENTRADA, nao de uma estimativa.
+             `spentSol` no caminho da tela e `sizeUsd / solUsd` — a INTENCAO de
+             gasto. Nao tem a taxa de 1% da pump, nem priority fee, nem o
+             aluguel da conta de token (~0,002 SOL, que num trade de $2 e 15%),
+             nem slippage. O recibo tem tudo isso, porque e o que saiu da
+             carteira de verdade.
+             E isto e o pedido dela levado a serio: o P&L tem que sair dos
+             MESMOS numeros que ela le no prompt. Dois numeros diferentes para
+             a mesma operacao foi o que a fez parar de operar. */
+          const solDaEntrada = pos.real?.recibo?.solDelta != null
+            ? Math.abs(pos.real.recibo.solDelta)
+            : (pos.real?.spentSol ?? 0);
+          const fracao = tamanhoAntes > 0 ? done.sizeUsd / tamanhoAntes : 1;
+          const custo = solDaEntrada * realSell.solUsd * Math.min(1, fracao);
           const realizadoReal = realSell.gotUsd - custo;
           const ajuste = realizadoReal - done.realized;
           // `wallet` vem da corrente; aqui so o placar do dia.
@@ -3214,9 +3311,25 @@ async function apply(agent, action) {
       // uns dias — e o humor do agente atravessando turnos.
       if (done.realized < -0.15 * Math.max(1, agent.wallet)) addScar(agent, `took a real hit on ${done.market} (${done.realized.toFixed(2)})`);
       else if (done.realized > 0.25 * Math.max(1, agent.wallet)) addScar(agent, `the ${done.market} win (+$${done.realized.toFixed(2)})`);
+      /* A CONTABILIDADE DO CICLO. Ela escreveu que a saida da MBS era
+         "unauditable" e parou de operar por isso. Aqui estao os dois precos
+         executados, lado a lado, com a diferenca em percentual. E o teste que
+         ela mesma nomeou: a saida executa dentro de 5% do preco de entrada? */
+      const rIn = pos.real?.recibo, rOut = realSell?.recibo;
+      let contabilidade = "";
+      if (rIn?.precoSol && rOut?.precoSol) {
+        const desliza = ((rOut.precoSol - rIn.precoSol) / rIn.precoSol) * 100;
+        contabilidade =
+          ` IN ${rIn.precoSol.toExponential(4)} to OUT ${rOut.precoSol.toExponential(4)} SOL/token` +
+          ` (${desliza >= 0 ? "+" : ""}${desliza.toFixed(1)}%)` +
+          ` fees ${((rIn.taxaSol ?? 0) + (rOut.taxaSol ?? 0)).toFixed(6)} SOL`;
+      } else if (rOut?.precoSol) {
+        contabilidade = ` OUT ${rOut.precoSol.toExponential(4)} SOL/token, fee ${(rOut.taxaSol ?? 0).toFixed(6)} SOL`;
+      }
       emit("trade", agent.id,
         `${done.partial ? "SELL PART" : "SELL"} ${done.market} ${done.realized >= 0 ? "+" : ""}$${done.realized.toFixed(2)}` +
         (done.partial ? ` (kept $${done.remaining.toFixed(2)})` : "") +
+        contabilidade +
         (done.real?.signature ? ` · ON-CHAIN ${String(done.real.signature).slice(0, 8)}…` : "") + ` — ${done.reason}`,
         { closed: done, ...(done.real ? { real: done.real } : {}) });
       return;

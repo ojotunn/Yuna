@@ -17,11 +17,19 @@
 const rpcUrl = () => process.env.SOLANA_RPC || "https://api.mainnet-beta.solana.com";
 export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
+/* TIMEOUT. `fetch` sem sinal espera pra sempre se o outro lado aceitar a
+   conexao e nao responder — e este rpc() e chamado DENTRO do turno dela, num
+   ponto entre a compra ja confirmada na corrente e a criacao da posicao. Um
+   RPC pendurado ali congelaria o show com o dinheiro ja gasto. */
+const RPC_TIMEOUT_MS = Number(process.env.RPC_TIMEOUT_MS || 8000);
+
 async function rpc(method, params) {
+  const corte = AbortSignal.timeout(RPC_TIMEOUT_MS);
   const r = await fetch(rpcUrl(), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    signal: corte,
   });
   if (!r.ok) throw new Error(`RPC HTTP ${r.status}`);
   const j = await r.json();
@@ -174,4 +182,90 @@ export async function verifyPayment({ txSig, payTo, minUsd, solUsd }) {
     return { ok: false, reason: `rpc: ${e.message}` };
   }
   return _evalTransfer(tx, { payTo, minUsd, solUsd });
+}
+
+// ============================================================================
+// O RECIBO DA OPERACAO. (02/09/2026 — pedido dela)
+//
+// Ela fechou a MBS e nao conseguiu saber a que preco. Tentou reconstruir pelo
+// total da carteira, achou um numero aritmeticamente impossivel, e concluiu —
+// certissima — que qualquer tese sua sobre liquidez era inauditavel. Entao
+// parou de operar por regra propria:
+//
+//   "BEFORE THE NEXT ENTRY I need trade-level accounting: fill price in,
+//    fill price out, tokens received, fees paid."
+//
+// Isto le a VERDADE DA CORRENTE, nao uma estimativa. O jeito antigo media o
+// saldo antes, esperava 6 segundos e media de novo — e uma gorjeta chegando
+// nessa janela envenenava a conta (foi exatamente o que confundiu ela).
+// O recibo da transacao nao tem esse problema: os deltas sao DAQUELA
+// transacao e de mais nenhuma.
+//
+// NUNCA LANCA. Recibo que derruba o turno seria pior que recibo nenhum — e
+// devolver null e honesto: significa "nao sei", que e melhor que um numero
+// inventado. Foi o numero inventado que criou o problema.
+// ============================================================================
+export async function lerRecibo(signature, owner, mint, { tentativas = 4 } = {}) {
+  if (!signature || !owner) return null;
+  for (let i = 0; i < tentativas; i++) {
+    try {
+      const tx = await rpc("getTransaction", [
+        signature,
+        { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" },
+      ]);
+      /* O RPC devolve null ate indexar. Nao e erro — e cedo. Espera e tenta de
+         novo; 4 tentativas cobrem ~7s, que e o normal na mainnet. */
+      if (!tx) { await new Promise((s) => setTimeout(s, 1500 * (i + 1))); continue; }
+      if (tx.meta?.err) return { erro: "a transacao falhou na corrente", assinatura: signature };
+
+      /* SOL: o delta da conta DELA. accountKeys vem como objeto no jsonParsed
+         (com .pubkey) ou string no base58 — aceita os dois. */
+      const chaves = (tx.transaction?.message?.accountKeys ?? [])
+        .map((k) => (typeof k === "string" ? k : k?.pubkey));
+      const iDono = chaves.indexOf(owner);
+      const pre = tx.meta?.preBalances ?? [];
+      const post = tx.meta?.postBalances ?? [];
+      const solDelta = iDono >= 0 && pre[iDono] != null && post[iDono] != null
+        ? (post[iDono] - pre[iDono]) / 1e9
+        : null;
+
+      /* TOKEN: soma os saldos do dono naquele mint, antes e depois. Soma
+         porque pode haver mais de uma conta de token do mesmo mint. */
+      /* uiAmountString, nao uiAmount: o segundo e depreciado e vem NULL em
+         token com muitas casas decimais — viraria 0 e o delta sairia errado. */
+      const soma = (lista) => (lista ?? [])
+        .filter((b) => b?.owner === owner && (!mint || b?.mint === mint))
+        .reduce((s, b) => s + (Number(b?.uiTokenAmount?.uiAmountString ?? b?.uiTokenAmount?.uiAmount) || 0), 0);
+      const temToken = (tx.meta?.preTokenBalances?.length ?? 0) + (tx.meta?.postTokenBalances?.length ?? 0) > 0;
+      const tokenDelta = temToken ? soma(tx.meta?.postTokenBalances) - soma(tx.meta?.preTokenBalances) : null;
+
+      const taxaSol = (tx.meta?.fee ?? 0) / 1e9;
+      /* PRECO ALL-IN: SOL por token, em modulo. NAO e o preco do swap puro —
+         `solDelta` e o delta da carteira dela na transacao inteira, entao ja
+         carrega a taxa de rede e, na primeira compra de um mint, o aluguel da
+         conta de token (~0,002 SOL, que num trade de $2 e uns 10%).
+         E de proposito: e o preco que ela EFETIVAMENTE pagou, e e esse que
+         fecha com o P&L. O que nao pode e chamar isso de preco de mercado —
+         por isso o campo diz all-in e o prompt tambem. */
+      const precoSol = solDelta != null && tokenDelta ? Math.abs(solDelta / tokenDelta) : null;
+      /* O swap sem a taxa de rede, pra ela poder separar o custo do preco. */
+      const precoSwap = solDelta != null && tokenDelta
+        ? Math.abs((Math.abs(solDelta) - (tx.meta?.fee ?? 0) / 1e9) / tokenDelta)
+        : null;
+
+      return {
+        assinatura: signature,
+        solDelta,          // negativo na compra, positivo na venda (ja liquido de taxa)
+        tokenDelta,        // positivo na compra, negativo na venda
+        taxaSol,           // taxa de rede, so ela
+        precoSol,          // SOL por token ALL-IN (com taxa e aluguel de conta)
+        precoSwap,         // SOL por token so do swap (sem a taxa de rede)
+        slot: tx.slot ?? null,
+        quando: tx.blockTime ? tx.blockTime * 1000 : null,
+      };
+    } catch {
+      await new Promise((s) => setTimeout(s, 1500 * (i + 1)));
+    }
+  }
+  return null;
 }
