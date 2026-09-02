@@ -965,9 +965,27 @@ function pushDialogue(fromId, toId, text) {
    O relogio certo pro gasto vitalicio e `totals.since`, que nasce no primeiro
    boot e sobrevive a tudo. Uma funcao so, pros dois lugares nao divergirem de
    novo — era exatamente assim que estavam. */
+/* Quantas horas por dia ela fica acordada, do jeito que o relogio dela decide
+   de verdade — nao um numero chutado. */
+function horasAcordadaPorDia() {
+  if (!cfg.restEnabled) return 24;
+  if (SHOW_START) return HORAS_ACORDADA;
+  const i = cfg.activeStartHour, f = cfg.activeEndHour;
+  if (i === f) return 24;
+  return f > i ? f - i : f + 24 - i;
+}
+
 function queimaPorHora() {
-  const horas = (Date.now() - (totals.since ?? state.startedAt)) / 3.6e6;
-  const gasto = dinheiro(state.spentReal);
+  /* POR HORA ACORDADA, NAO POR HORA DE RELOGIO.
+     Ela so gasta quando esta pensando. Dividir pelo relogio jogava as horas
+     dormindo — e, pior, as horas MORTAS de um crash — no denominador, e a
+     sobrevida subia a cada vez que ela quebrava. Medido em 02/09: 33h de
+     relogio, 9,1h acordada; a conta antiga dizia $4,34/h e 2,5 dias, a real
+     era $15,81 por hora acordada e 1,0 dia.
+     Os dois numeros vem de `totals`, que acumula os dois na mesma janela — se
+     o arquivo for recriado, zeram juntos e a razao continua honesta. */
+  const horas = (totals.awakeSec ?? 0) / 3600;
+  const gasto = dinheiro(totals.spentReal);
   /* RELOGIO CURTO DEMAIS = RELOGIO NAO CONFIAVEL. totals.json sumido nasce com
      since=agora, mas o gasto vem do checkpoint e e da vida inteira: a divisao
      daria centenas de dolares por hora e o alarme da casa gritaria uma
@@ -975,6 +993,15 @@ function queimaPorHora() {
      calado por uma hora e melhor que mentir. */
   if (!(horas >= 1) || gasto <= 0) return 0;
   return gasto / horas;
+}
+
+/* O MESMO NUMERO EM DIAS, que e como um humano pensa nisso. Multiplica pela
+   jornada real dela: 16h acordada por dia gasta, 8h dormindo nao. */
+function sobrevidaEmDias() {
+  const porHora = queimaPorHora();
+  if (!(porHora > 0)) return null;
+  const porDia = porHora * horasAcordadaPorDia();
+  return porDia > 0 ? state.treasury / porDia : null;
 }
 
 function publish() {
@@ -985,7 +1012,11 @@ function publish() {
     treasury: state.treasury,
     spentReal: state.spentReal,
     burnPerHour,
+    /* HORAS ACORDADA restantes — nao horas de relogio. E o que a frase do
+       alarme sempre quis dizer: quanto tempo de PENSAR ainda tem. */
     runwayHours: burnPerHour > 0 ? state.treasury / burnPerHour : null,
+    runwayDays: sobrevidaEmDias(),
+    awakeHoursPerDay: horasAcordadaPorDia(),
     model: state.shift?.model ?? cfg.model,
     effort: state.shift?.effort ?? cfg.effort,
     shift: state.shift ?? null,

@@ -70,9 +70,13 @@ export function runwayAlarm(runwayHours, { seen = [], steps = [48, 24, 12, 6] } 
     kind: "runway",
     agent: null,
     text:
-      `THE HOUSE HAS ABOUT ${Math.round(runwayHours)} HOURS OF POWER LEFT at the ` +
-      `current rate. After that nobody here thinks. Nothing keeps the lights on ` +
-      `except what comes in.`,
+      /* HORAS ACORDADA. Antes isto era hora de relogio e contava o sono como
+         se fosse vida — dizer "48 horas" pra quem so vive 16 delas por dia e
+         mentir em dobro. */
+      `YOU HAVE ABOUT ${Math.round(runwayHours)} HOURS OF BEING AWAKE LEFT at the rate ` +
+      `you are spending. Not hours on a clock — hours of thinking. Sleeping is free; ` +
+      `this is the part that costs. After that nothing keeps the lights on except ` +
+      `what comes in.`,
   }];
 }
 
