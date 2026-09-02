@@ -333,3 +333,28 @@ export function parearCiclos(ops, mint = null) {
   }
   return ciclos;
 }
+
+/* QUANTO ELA TEM DE UM TOKEN. Precisa disto pra saber se ela ja comprou a
+   propria moeda — e o que faz a instrucao de comprar se apagar sozinha em vez
+   de ficar pendurada no prompt pedindo a mesma coisa todo turno. Foi um recado
+   pendurado assim que a fez repetir o anuncio ate a pump silencia-la. */
+export async function saldoDoToken(owner, mint) {
+  if (!owner || !mint) return null;
+  try {
+    let total = 0, achou = false;
+    /* Os dois programas de token: as moedas novas da pump saem em Token-2022,
+       e olhar so o classico dizia "zero" com a moeda na mao. */
+    for (const prog of ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                        "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"]) {
+      const r = await rpc("getTokenAccountsByOwner",
+        [owner, { mint }, { encoding: "jsonParsed" }]).catch(() => null);
+      for (const t of (r?.value ?? [])) {
+        const a = t?.account?.data?.parsed?.info?.tokenAmount;
+        total += Number(a?.uiAmountString ?? a?.uiAmount) || 0;
+        achou = true;
+      }
+      if (achou) break;
+    }
+    return total;
+  } catch { return null; }
+}

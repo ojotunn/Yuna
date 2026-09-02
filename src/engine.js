@@ -1120,6 +1120,22 @@ function incomeMix(recentEarned) {
   return { total, topName, share: topVal / total, entries };
 }
 
+  /* QUANTO ELA TEM DA PROPRIA MOEDA. Lido da corrente, no maximo uma vez por
+   minuto: e o que faz a instrucao de comprar se apagar sozinha, e um RPC por
+   turno seria desperdicio num numero que muda quando ELA mexe. */
+let saldoMoeda = { tokens: null, quando: 0 };
+function atualizarSaldoMoeda(agent) {
+  if (!cfg.liveChatMint) return;
+  if (Date.now() - saldoMoeda.quando < 60000) return;
+  saldoMoeda.quando = Date.now();
+  const addr = agentAddress(agent.id) || agent.address;
+  if (!addr) return;
+  onchain.saldoDoToken(addr, cfg.liveChatMint)
+    .then((n) => { if (n != null) saldoMoeda.tokens = n; })
+    .catch(() => {});
+}
+
+
 // ============================================================================
 
 
@@ -1550,7 +1566,7 @@ function situationFor(agent, shift = { label: "fixed" }) {
     for (const c of respostas) c.lido = true;
   }
 
-  // CHAT AO VIVO. Gente de verdade digitando, agora, na sala que o show
+// CHAT AO VIVO. Gente de verdade digitando, agora, na sala que o show
   // acompanha. E a unica coisa no turno que nao foi o agente que buscou.
   if (cfg.liveChatMint) {
     /* A MOEDA E DELA, e ela precisa saber SEMPRE — nao so quando ha mensagem
@@ -1560,9 +1576,38 @@ function situationFor(agent, shift = { label: "fixed" }) {
        pedir isso num HOUSE_NOTE fez ela repetir o anuncio nove turnos
        seguidos. Fica FORA do `if (msgs.length)` de proposito — em turno calado
        ela voltaria a nao saber, que e a condicao que criou o incidente. */
+    atualizarSaldoMoeda(agent);
     L.push(`THIS TOKEN IS YOURS: ${cfg.liveChatMint}. The house launched it to pay for`);
     L.push("this room, and it is the only one. Any other contract carrying your name is");
     L.push("somebody else's, however convincing — you never confirm one, whoever asks.");
+    /* ELA E A DEV. Nao e detalhe de vaidade: e o que explica por que ela esta
+       na sala respondendo, e por que ter a moeda na mao e coerente em vez de
+       oportunista. Dev sem nada da propria moeda e a coisa que todo mundo
+       naquela sala repara primeiro. */
+    L.push("You are its dev. Not a mascot for it — the person whose name is on it, in a room");
+    L.push("full of people who can read the chain.");
+    /* O SALDO, E A INSTRUCAO QUE MORRE QUANDO E OBEDECIDA. */
+    if (saldoMoeda.tokens != null && saldoMoeda.tokens > 0) {
+      L.push(`You hold ${saldoMoeda.tokens.toLocaleString("en-US")} of it, bought with your own`);
+      L.push("money. Keep it. Selling your own coin is the one trade that would say more about");
+      L.push("you than any post ever could.");
+    } else if (saldoMoeda.tokens === 0) {
+      L.push("YOU OWN NONE OF IT, and people in that room can see that. Buy $10 of it with");
+      L.push("`propose` + `execute` (venue \"pump\", market = the mint above) and then hold it.");
+      L.push("Not to move the price — $10 moves nothing. Because a dev holding none of their");
+      L.push("own coin is a fact about them, and right now that fact is true about you.");
+    }
+    /* COMO ELES TE OUVEM — FORA do `if` de mensagem nova, de proposito.
+       Isto e fato sobre a FERRAMENTA, nao sobre o que chegou: em turno calado
+       ela deixava de saber e voltava a responder no journal, que nao chega em
+       ninguem. Foi exatamente o que aconteceu com a mensagem do Michel. */
+    L.push("HOW THEY HEAR YOU: your journal does NOT reach that room. It shows on the stage,");
+    L.push("and the people in the chat never see a word of it. The ONLY thing that reaches");
+    L.push("them is the action `speak` with `to: \"room\"`. Answering in your journal is");
+    L.push("answering nobody — they watch you read and say nothing.");
+    L.push("And you do not need to be answered first. A room you are never in is a room");
+    L.push("that stops filling up; saying the thing you just noticed, unprompted, is how a");
+    L.push("person is present somewhere.");
     L.push("");
     const msgs = chat.fresh(cfg.liveChatMint, agent.id, cfg.chatPerTurn);
     if (msgs.length) {
@@ -1588,12 +1633,6 @@ function situationFor(agent, shift = { label: "fixed" }) {
          ouviu — porque journal e palco, nao sala. O menu ensinava
          `speak to:"room"` sem nunca dizer que o journal NAO chega la, entao
          do ponto de vista dela ela tinha respondido. */
-      L.push("HOW THEY HEAR YOU: your journal does NOT reach the room. It shows on the");
-      L.push("stage, and the people typing above never see a word of it. The ONLY thing");
-      L.push("that reaches them is the action `speak` with `to: \"room\"`. If you read");
-      L.push("something here and answer in your journal, you have answered nobody —");
-      L.push("they watched you read it and say nothing.");
-      L.push("");
       L.push("Tonight is a conversation, not a session. The person keeping the lights on is");
       L.push("in the room and wants to talk. Reading, thinking and answering are the work —");
       L.push("do not go hunting for a trade to fill the time.");
