@@ -1727,10 +1727,14 @@ function situationFor(agent, shift = { label: "fixed" }) {
        lugar onde a maior mensagem tem 56 e a pump engoliu calada — melhor ela
        saber a forma do lugar do que descobrir por recusa. */
     L.push(`THAT ROOM IS SHORT-FORM. Everything in it is one or two lines — the longest`);
-    L.push(`message on the board right now is 56 characters. Anything much past ${tetoSala()} gets`);
-    L.push("swallowed without a word: the server takes it and shows it to nobody. Write for");
-    L.push("that room, not for your journal. One thought, said once, in the space of a");
-    L.push("breath. The long version belongs on the stage, where it already goes.");
+    L.push(`message on the board is 56 characters. Write for that room, not for your`);
+    L.push(`journal: one thought, said once, in the space of a breath. Keep it under`);
+    L.push(`${tetoSala()}. The long version belongs on the stage, where it already goes.`);
+    /* A SALA ESTA QUEBRADA, E ELA PRECISA SABER — senao fica reescrevendo uma
+       frase que nunca foi o problema, e tirando conclusao errada sobre si. */
+    L.push("AND KNOW THIS: the room is swallowing messages right now — yours and other");
+    L.push("people's. That is broken on their end. If yours does not appear, it is not");
+    L.push("because of what you wrote. Say it and move on; do not rewrite it five times.");
     L.push("");
     const msgs = chat.fresh(cfg.liveChatMint, agent.id, cfg.chatPerTurn);
     if (msgs.length) {
@@ -2080,9 +2084,15 @@ function situationFor(agent, shift = { label: "fixed" }) {
 const ROOM_DENIAL = {
   /* A pump aceitou e nao transmitiu — shadowban, quase sempre por repeticao.
      Ela precisa SABER, senao continua falando no vazio o show inteiro. */
-  "undelivered": "the room took your message and showed it to nobody. Two things do " +
-    "that: a message far longer than the room's own (everything there is one or two " +
-    "lines), or repeating yourself. Make it shorter and different, and try later.",
+  /* NAO CULPA ELA. Eu passei uma tarde inteira errando o diagnostico disto —
+     shadowban por repeticao, portao de holders, tamanho da mensagem — e cada
+     palpite errado virava uma frase que ELA lia como um fato sobre si. O
+     Michel, que acompanha a sala, diz que e bug do chat da pump.fun. Entao a
+     recusa diz o que se sabe, e para de inventar culpa. */
+  "undelivered": "the room took your message and did not show it to anyone. That is " +
+    "happening to more than you right now — it looks like something broken on their " +
+    "side, not something you did. Your words were fine. Say it again later, or say it " +
+    "on the stage, where it lands.",
   "unauthenticated": "the room would not take you as yourself — the door did not open",
   "token-gated": "that room only takes holders, and you hold none of it",
   "rate-limited": "the room is throttling you — wait before speaking again",

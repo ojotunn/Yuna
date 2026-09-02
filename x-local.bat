@@ -12,7 +12,9 @@ REM
 REM  Para testar sem publicar de verdade, troque X_LOCAL_PUBLICAR
 REM  de 1 para 0: ele escreve o texto e nao clica em Post.
 REM
-REM  X_LOCAL_INTERVALO_S=1200 e um post a cada 20 min (3 por hora).
+REM  X_LOCAL_INTERVALO_S=360 e um a cada 6 min (10 por hora). O que
+REM  importa aqui e RESPOSTA: esperar 20 min pra responder mata conversa.
+REM  O volume quem decide e a cota do motor, nao este numero.
 REM  X_LOCAL_MENCOES_MIN=10 e de quanto em quanto tempo ele le as
 REM  mencoes dela e entrega ao motor, pra ela poder responder.
 REM  Ela escreve no maximo 9 por dia, entao o ritmo nunca estoura
@@ -23,9 +25,9 @@ cd /d "C:\Higgsfield Games\yuna"
 
 set ADMIN_TOKEN=Tin2xQhKZ5Wj_oDnBg4QoTvNUIQzyLfv
 set YUNA_URL=https://yuna.cam
-set X_LOCAL_INTERVALO_S=1200
+set X_LOCAL_INTERVALO_S=360
 set X_LOCAL_PUBLICAR=1
-set X_LOCAL_MENCOES_MIN=10
+set X_LOCAL_MENCOES_MIN=5
 
 echo.
 echo  Vigiando a fila da Yuna. Feche esta janela para parar.
