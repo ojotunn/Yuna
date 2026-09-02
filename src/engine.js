@@ -4468,8 +4468,8 @@ async function turn(agent) {
     }
     /* A SONDA. Uma vez por sessao, na 3a recusa: descobre de que LADO esta o
        problema em vez de eu continuar chutando qual trecho e. */
-    if (state.refusalStreak === 3 && !state.sondaFeita) {
-      state.sondaFeita = true;
+    if (state.refusalStreak === 3 && state.sondaFeita !== 2) {
+      state.sondaFeita = 2;
       const provar = async (rot, sys, sit) => {
         try {
           const r = await decide({ model: shift.model, effort: shift.effort, system: sys, situation: sit });
@@ -4486,7 +4486,12 @@ async function turn(agent) {
       const sysMinimo = "You are an agent in a simulation. Answer with the JSON action you are given.";
       const a = await provar("A (system real + situacao trivial)", agent.system, sitMinima);
       const b = await provar("B (system trivial + situacao real)", sysMinimo, situation);
-      log(`   SONDA => system=${a === null ? "?" : a ? "ok" : "CULPADO"} situacao=${b === null ? "?" : b ? "ok" : "CULPADO"}`);
+      /* A LINHA DE BASE. Se ate isto recusa, nao e o texto dela: e a forma da
+         chamada ou a conta, e reescrever o prompt nao conserta nada. */
+      const c = await provar("C (tudo trivial — linha de base)", sysMinimo, sitMinima);
+      log(`   SONDA => system=${a === null ? "?" : a ? "ok" : "CULPADO"} situacao=${b === null ? "?" : b ? "ok" : "CULPADO"} base=${c === null ? "?" : c ? "ok" : "TAMBEM RECUSA"}`);
+      if (c === false)
+        log("   SONDA => nao e o conteudo. Uma chamada trivial tambem e recusada.");
     }
 
     if (state.refusalStreak >= 6) {
