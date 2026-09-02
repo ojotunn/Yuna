@@ -689,6 +689,18 @@ function loadCheckpoint() {
   }
   delete state.billPostedDay;
 
+  /* O PROMPT NAO ATRAVESSA UM RESTART. (02/09/2026)
+     `agent.system` e montado uma vez por processo e cai no retrato junto com o
+     resto do estado; o Object.assign acima trazia o texto VELHO de volta, e a
+     unica coisa que zerava era `rewrite_persona` — que e ela quem chama, uma
+     vez por dia, e ela nunca chamou (personaVersion 1). Resultado: toda edicao
+     de prompt feita aqui depois do primeiro checkpoint ficou inerte.
+     Um restart pode significar codigo novo. Zera aqui e o proximo turno remonta
+     com o que esta no disco AGORA. Custa uma montagem de string por boot. */
+  for (const id of ORDER) {
+    if (state.agents[id]) state.agents[id].system = null;
+  }
+
   /* POSICAO "REAL" SEM ASSINATURA NUNCA ACONTECEU. (02/09/2026)
      O clique na pagina dizia que a compra deu certo sem produzir assinatura, e
      o codigo aceitava — cinco posicoes de $2 no quadro contra UMA na corrente.

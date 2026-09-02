@@ -245,6 +245,11 @@ const servidor = http.createServer(async (req, res) => {
     if (!fs.existsSync(TELA)) return enviar(res, 404, { erro: "a tela ainda nao foi gerada" });
     /* NUNCA CACHEAR. A tela tem 3 MB e o navegador guardava a versao antiga:
        eu corrigia, mandava recarregar, e ele via exatamente a mesma coisa. */
+    /* A ROTA QUE O STREAM CARREGA. Sem esta guarda, um build que nao produza
+       o arquivo faria cada espectador derrubar o processo dela em laco — a
+       rede de seguranca aqui e process.exit(1), nao um catch. */
+    if (!fs.existsSync(TELA))
+      return enviar(res, 503, { erro: "a tela nao foi gerada neste build" });
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store, no-cache, must-revalidate",
@@ -389,11 +394,16 @@ const servidor = http.createServer(async (req, res) => {
      fica na live — eu parei de adivinhar escala depois de errar varias vezes.
      O que ele salvar cai num JSON que eu leio e aplico igual. */
   if (url.pathname === "/editor") {
+    /* ROTA PUBLICA SEM REDE. readFileSync num arquivo que NAO EXISTE
+       (public/editor-tela.html foi removido) joga dentro do handler: qualquer
+       pessoa abrindo yuna.cam/editor derrubava o processo dela. Agora e 404. */
+    const arq = path.join(ROOT, "public", "editor-tela.html");
+    if (!fs.existsSync(arq)) return enviar(res, 404, { erro: "o editor nao existe mais" });
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
     });
-    return res.end(fs.readFileSync(path.join(ROOT, "public", "editor-tela.html")));
+    return res.end(fs.readFileSync(arq));
   }
   if (url.pathname === "/api/tela" && req.method === "POST") {
     let corpo = "";
