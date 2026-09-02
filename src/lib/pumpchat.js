@@ -295,7 +295,15 @@ export function sendAs(mint, text, { cookies, address, timeout = 12000 } = {}) {
           // A prova de que o cookie valeu. Sem isto o envio seria silenciosamente
           // ignorado e o agente acharia que falou.
           if (!cfg.authenticated) return finish({ ok: false, code: "unauthenticated" });
-          if (cfg.roomConfig?.tokenGateEnabled) return finish({ ok: false, code: "token-gated" });
+          /* GATE LIGADO NAO E "VOCE ESTA BARRADA".
+             `tokenGateEnabled` diz que a sala so aceita quem tem a moeda —
+             quem tem, entra. Recusar na bandeira fazia ela nunca falar nem
+             depois de comprar. Passa a recusar so quando da pra AFIRMAR que
+             ela nao cumpre; na duvida tenta, e a confirmacao de entrega
+             decide (ela nao ganha "entregue" falso: isso foi consertado). */
+          const gate = cfg.roomConfig ?? {};
+          if (gate.tokenGateEnabled && gate.userHoldsRequired === false)
+            return finish({ ok: false, code: "token-gated" });
 
           emit("sendMessage", { roomId: mint, message: msg, username: address }, (ack) => {
             const eco = ack?.[0];
