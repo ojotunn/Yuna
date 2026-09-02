@@ -18,7 +18,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import dotenv from "dotenv";
 
-import { decide, freeText, consultar } from "./lib/claude.js";
+import { decide, freeText, consultar, sondaForma } from "./lib/claude.js";
 import * as market from "./lib/market.js";
 import * as broker from "./lib/broker.js";
 import * as mem from "./lib/memory.js";
@@ -4468,8 +4468,8 @@ async function turn(agent) {
     }
     /* A SONDA. Uma vez por sessao, na 3a recusa: descobre de que LADO esta o
        problema em vez de eu continuar chutando qual trecho e. */
-    if (state.refusalStreak === 3 && state.sondaFeita !== 2) {
-      state.sondaFeita = 2;
+    if (state.refusalStreak === 3 && state.sondaFeita !== 3) {
+      state.sondaFeita = 3;
       const provar = async (rot, sys, sit) => {
         try {
           const r = await decide({ model: shift.model, effort: shift.effort, system: sys, situation: sit });
@@ -4489,6 +4489,15 @@ async function turn(agent) {
       /* A LINHA DE BASE. Se ate isto recusa, nao e o texto dela: e a forma da
          chamada ou a conta, e reescrever o prompt nao conserta nada. */
       const c = await provar("C (tudo trivial — linha de base)", sysMinimo, sitMinima);
+      /* D e E: a FORMA, nao o texto. 18 campos com union num schema com teto
+         conhecido de 16 neste projeto. */
+      for (const [rot, comSchema] of [["D (chamada nua, sem schema)", false],
+                                      ["E (schema minimo de 3 campos)", true]]) {
+        try {
+          const r = await sondaForma({ model: shift.model, comSchema });
+          log(`   SONDA ${rot}: stop=${r.stop} ${r.texto ? `("${r.texto}")` : ""}`);
+        } catch (e) { log(`   SONDA ${rot}: erro ${String(e.message).slice(0, 100)}`); }
+      }
       log(`   SONDA => system=${a === null ? "?" : a ? "ok" : "CULPADO"} situacao=${b === null ? "?" : b ? "ok" : "CULPADO"} base=${c === null ? "?" : c ? "ok" : "TAMBEM RECUSA"}`);
       if (c === false)
         log("   SONDA => nao e o conteudo. Uma chamada trivial tambem e recusada.");

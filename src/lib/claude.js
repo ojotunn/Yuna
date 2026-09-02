@@ -265,6 +265,36 @@ export async function decide({ model, effort, system, situation, maxTokens = 400
 
 // Texto livre, sem schema — para os SONHOS (uma chamada barata por noite).
 // Devolve { text, cost }. Nao entra no fluxo de acao: e literatura, nao decisao.
+/* SONDA DE FORMA. Devolve o stop_reason cru pra uma chamada minima, com ou
+   sem schema — e como se descobre se o problema e o ACTION_SCHEMA e nao o
+   texto. Ver o cabecalho do patch de 02/09. */
+export async function sondaForma({ model, comSchema }) {
+  const corpo = {
+    model,
+    max_tokens: 64,
+    system: "Answer briefly.",
+    messages: [{ role: "user", content: "Say the word ok." }],
+  };
+  if (comSchema) {
+    corpo.output_config = {
+      format: {
+        type: "json_schema",
+        schema: {
+          type: "object", additionalProperties: false,
+          required: ["type"],
+          properties: {
+            type: { enum: ["rest", "speak"] },
+            text: { type: ["string", "null"] },
+            reason: { type: ["string", "null"] },
+          },
+        },
+      },
+    };
+  }
+  const res = await getClient().messages.create(corpo);
+  return { stop: res.stop_reason, texto: (res.content.find((b) => b.type === "text")?.text ?? "").slice(0, 60) };
+}
+
 export async function freeText({ model, system, user, maxTokens = 400 }) {
   const res = await getClient().messages.create({
     model,
