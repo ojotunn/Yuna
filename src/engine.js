@@ -201,6 +201,8 @@ export const AJUSTAVEIS = [
      caracteres. reloadLiveConfig ja relia as duas; sem estarem aqui, mandar
      pelo painel era aceito e nao mudava nada. */
   "ROOM_POST_COOLDOWN_TICKS", "ROOM_MAX_CHARS",
+  /* A escala de turnos: liga, muda e desliga sem reiniciar o show. */
+  "SHIFTS",
   "WORLD_EVENT_EVERY_TICKS", "SCHEDULE",
   "MAX_REAL_TRADE_USD", "REAL_TRADING", "LIVE_TRADE", "TRADING_ENABLED",
   "MIN_POOL_USD", "MAX_POOL_PCT", "DAILY_LOSS_LIMIT_PCT",
@@ -312,6 +314,20 @@ function reloadLiveConfig() {
   cfg.chatPerTurn = n("CHAT_MSGS_PER_TURN", cfg.chatPerTurn);
   cfg.roomPostCooldown = n("ROOM_POST_COOLDOWN_TICKS", cfg.roomPostCooldown);
   cfg.roomMaxChars = n("ROOM_MAX_CHARS", cfg.roomMaxChars);
+  /* A ESCALA, ao vivo. Trocar o modelo por faixa de hora e a alavanca de custo
+     mais forte e a que mais mexe no que ela SOA — entao tem que dar pra
+     desligar no segundo em que soar errado, sem restart. Vazio volta pro
+     modelo fixo, que e o comportamento de sempre. */
+  if (env.SHIFTS !== undefined) {
+    const nova = parseShifts(String(env.SHIFTS));
+    const antes = JSON.stringify(cfg.shifts ?? []);
+    if (JSON.stringify(nova) !== antes) {
+      cfg.shifts = nova;
+      log(nova.length
+        ? `escala mudou ao vivo: ${nova.map((x) => `${x.start}-${x.end}:${x.model}`).join(", ")}`
+        : "escala desligada ao vivo — volta ao modelo fixo");
+    }
+  }
 
   // O RPC e lido de process.env a cada chamada (wallet.js e executor.js), e o
   // ambiente do processo foi congelado no spawn. Escrever aqui e o que permite
