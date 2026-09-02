@@ -22,13 +22,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer";
-import { estaLogada, pediuVerificacao, postar } from "../src/lib/x-tela.js";
+import { estaLogada, pediuVerificacao, postar, responder, lerMencoes } from "../src/lib/x-tela.js";
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const PERFIL = path.join(AQUI, "x-perfil");
 const SITE = process.env.YUNA_URL || "https://yuna.cam";
 const TOKEN = process.env.ADMIN_TOKEN || "";
 const INTERVALO = Number(process.env.X_LOCAL_INTERVALO_S || 60) * 1000;
+/* De quanto em quanto tempo ele olha as mencoes. Ler e de graca pelo navegador
+   — e a razao inteira deste caminho existir, porque o tier gratuito da API do
+   X nao da leitura nenhuma. */
+const LER_MENCOES_MIN = Number(process.env.X_LOCAL_MENCOES_MIN || 10);
 const PUBLICAR = process.env.X_LOCAL_PUBLICAR !== "0";   // 0 = ensaio, nao clica em Post
 
 if (!TOKEN) { console.log("  falta ADMIN_TOKEN no ambiente."); process.exit(1); }
@@ -47,7 +51,11 @@ console.log("  perfil do navegador:", PERFIL);
 const browser = await puppeteer.launch({
   headless: false,                 // visivel: e assim que voce loga na primeira vez
   userDataDir: PERFIL,
-  args: ["--no-first-run", "--no-default-browser-check", "--window-size=1280,900"],
+  /* `AutomationControlled` e a marca que poe navigator.webdriver=true. O X le
+     isso e recusa LOGIN na hora ("Limitamos temporariamente seu acesso"). Sem
+     ela, a janela se parece com um Chrome comum. */
+  args: ["--no-first-run", "--no-default-browser-check", "--window-size=1280,900",
+         "--disable-blink-features=AutomationControlled"],
   defaultViewport: null,
 });
 const page = (await browser.pages())[0] ?? await browser.newPage();
@@ -56,21 +64,44 @@ await page.goto("https://x.com/home", { waitUntil: "domcontentloaded", timeout: 
 await new Promise((r) => setTimeout(r, 4000));
 
 if (!await estaLogada(page)) {
-  console.log("");
-  console.log("  ====================================================");
-  console.log("   PRIMEIRA VEZ: faca login como @yunaagent na janela");
-  console.log("   que abriu. Ela fica lembrada, voce nao repete isso.");
-  console.log("   Quando terminar, esta janela segue sozinha.");
-  console.log("  ====================================================");
-  console.log("");
-  for (let i = 0; i < 120; i++) {              // ate 10 minutos esperando
-    await new Promise((r) => setTimeout(r, 5000));
-    if (await estaLogada(page)) break;
+  /* NAO TENTA LOGAR: PLANTA A SESSAO QUE JA EXISTE.
+     O X recusa login em janela automatizada — "Limitamos temporariamente seu
+     acesso" — e insistir so gasta tentativa. Os cookies vem de um arquivo que
+     voce preenche uma vez, copiando do Chrome que ja esta logado. Mesmo
+     caminho que funcionou na nuvem. */
+  const ARQ = path.join(AQUI, "x-cookies-local.json");
+  if (!fs.existsSync(ARQ)) {
+    fs.writeFileSync(ARQ, JSON.stringify({ auth_token: "", ct0: "" }, null, 2));
+    console.log("");
+    console.log("  Ela nao esta logada, e o X nao aceita login em janela automatizada.");
+    console.log("  Preencha este arquivo com os cookies do seu Chrome e rode de novo:");
+    console.log("    " + ARQ);
+    console.log("  (Chrome logado como @yunaagent: F12 > Application > Cookies > x.com,");
+    console.log("   copie os valores de `auth_token` e `ct0`)");
+    process.exit(1);
   }
-  if (!await estaLogada(page)) { console.log("  nao logou — feche e rode de novo."); process.exit(1); }
+  const c = JSON.parse(fs.readFileSync(ARQ, "utf8"));
+  if (!c.auth_token || !c.ct0) { console.log("  o arquivo de cookies esta vazio: " + ARQ); process.exit(1); }
+  const comuns = { domain: ".x.com", path: "/", secure: true, sameSite: "Lax" };
+  await page.setCookie(
+    { name: "auth_token", value: c.auth_token, ...comuns, httpOnly: true },
+    { name: "ct0", value: c.ct0, ...comuns, httpOnly: false },
+  );
+  await page.goto("https://x.com/home", { waitUntil: "domcontentloaded", timeout: 60000 });
+  await new Promise((r) => setTimeout(r, 5000));
+  if (!await estaLogada(page)) { console.log("  a sessao nao pegou — os cookies podem ter expirado."); process.exit(1); }
+  console.log("  sessao plantada — o perfil guarda daqui pra frente.");
 }
 console.log("  logada no X. Vigiando a fila dela a cada " + (INTERVALO / 1000) + "s.");
 if (!PUBLICAR) console.log("  MODO ENSAIO: escreve o post e NAO clica em publicar.");
+
+/* Mencoes ja entregues ao motor. Sem isto, cada leitura reenviaria as mesmas
+   e ela veria a mesma pergunta cinco vezes. */
+const jaVistas = new Set();
+let proximaLeitura = 0;
+/* O link de cada mencao, guardado pelo handle: e o que permite RESPONDER na
+   conversa da pessoa em vez de postar solto. */
+const linkDe = new Map();
 
 for (;;) {
   try {
@@ -79,12 +110,40 @@ for (;;) {
       await new Promise((r) => setTimeout(r, 60000));
       continue;
     }
+    /* 1) LER O QUE FALARAM COM ELA. */
+    if (Date.now() >= proximaLeitura) {
+      proximaLeitura = Date.now() + LER_MENCOES_MIN * 60000;
+      const r = await lerMencoes(page, { limite: 8 }).catch(() => null);
+      if (r?.ok) {
+        const novas = (r.mencoes || []).filter((m) => m.link && !jaVistas.has(m.link));
+        for (const m of novas) {
+          jaVistas.add(m.link);
+          if (m.autor) linkDe.set(String(m.autor).replace(/^@/, "").toLowerCase(), m.link);
+          await api("POST", { tipo: "comentario", de: m.autor, texto: m.texto });
+          console.log("  mencao de " + m.autor + ": " + String(m.texto).slice(0, 60));
+        }
+        if (novas.length) console.log("  " + novas.length + " mencao(oes) entregues ao motor.");
+      } else if (r) {
+        console.log("  nao consegui ler as mencoes:", r.motivo);
+      }
+      await page.goto("https://x.com/home", { waitUntil: "domcontentloaded" }).catch(() => {});
+    }
+
+    /* 2) PUBLICAR O QUE ELA ESCREVEU. */
     const { pendentes = [] } = await api("GET");
     const fila = pendentes.filter((p) => !p.sent && !p.descartado);
     if (fila.length) {
       const p = fila[fila.length - 1];          // o mais novo primeiro
-      console.log(`  publicando [${p.id}]: ${String(p.text).slice(0, 70)}...`);
-      const r = await postar(page, p.text, { publicar: PUBLICAR });
+      /* RESPOSTA VAI NA CONVERSA, nao no vazio. `para` e o handle que ELA
+         escolheu responder; o link veio da mencao. Sem link conhecido cai pro
+         post solto, que e melhor que perder o texto dela. */
+      const alvo = p.para ? linkDe.get(String(p.para).replace(/^@/, "").toLowerCase()) : null;
+      console.log(alvo
+        ? "  respondendo " + p.para + ": " + String(p.text).slice(0, 60)
+        : "  publicando: " + String(p.text).slice(0, 70));
+      const r = alvo
+        ? await responder(page, alvo, p.text, { publicar: PUBLICAR })
+        : await postar(page, p.text, { publicar: PUBLICAR });
       if (r?.ok && !r.ensaio) {
         /* SO MARCA DEPOIS DE PUBLICAR DE VERDADE. Marcar antes enterraria o
            post na fila sem ele ter saido — e o botao de desfazer no painel

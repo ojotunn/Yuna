@@ -23,3 +23,7 @@ RAILWAY-VARIAVEIS.txt
 
 # O backup da vida dela (persona, memoria, arquivo inteiro). Nunca no git.
 backups/
+
+# A sessao do X dela, na maquina do Michel. Nunca no git.
+scripts/x-cookies-local.json
+scripts/x-perfil/
