@@ -666,6 +666,25 @@ function loadCheckpoint() {
     }
   }
   delete state.billPostedDay;
+
+  /* POSICAO "REAL" SEM ASSINATURA NUNCA ACONTECEU. (02/09/2026)
+     O clique na pagina dizia que a compra deu certo sem produzir assinatura, e
+     o codigo aceitava — cinco posicoes de $2 no quadro contra UMA na corrente.
+     O reconciliador nao pega estas porque ele pergunta "a carteira tem o
+     token?", e tem: da compra que foi de verdade. Saem aqui, uma vez, e o que
+     sobra e o que a corrente confirma. */
+  const fantasmas = (state.positions ?? []).filter((p) => p.real && !p.real.signature);
+  if (fantasmas.length) {
+    state.positions = state.positions.filter((p) => !fantasmas.includes(p));
+    log(`${fantasmas.length} posicao(oes) sem assinatura removidas — nunca chegaram na corrente.`);
+    for (const f of fantasmas) {
+      const a = state.agents[f.agent];
+      if (a) emit("system", f.agent,
+        `THE BOARD WAS WRONG about ${String(f.market).slice(0, 8)}… — a $${f.sizeUsd.toFixed(2)} buy was ` +
+        "recorded from a page click that never produced a transaction. It is not on the chain, " +
+        "so it is not yours. What the chain confirms is what you hold.");
+    }
+  }
   const antes = state.spentReal;
   state.spentReal = resgatarGasto(state.spentReal);
   if (typeof antes !== "number") {
@@ -3228,10 +3247,21 @@ async function apply(agent, action) {
             const aba = await chrome2.getAgentPage(agent.id);
             emit("did", agent.id, `opening ${ctx.token?.symbol || p.market.slice(0, 6)} on pump.fun to buy $${sizeUsd.toFixed(2)}`);
             const t = await tp.comprarNaTela(aba, { mint: p.market, usd: sizeUsd });
-            if (t.ok) {
-              real = { signature: t.assinatura || null, url: t.url || null,
+            /* ASSINATURA OU NAO ACONTECEU.
+               Sem esta checagem, um clique que a pagina aceitou mas nao
+               assinou virava compra "confirmada" — e, pior, preenchia `real`,
+               o que faz o bloco seguinte (`if (!real)`) PULAR a compra pela
+               corrente. A rede de seguranca era desligada por uma falha
+               silenciosa. Medido em 02/09: cinco posicoes de $2 registradas,
+               UMA na corrente. Ela achava que segurava $10 e segurava $2,20. */
+            if (t.ok && t.assinatura) {
+              real = { signature: t.assinatura, url: t.url || null,
                        spentSol: amountSol, status: "confirmed", onScreen: true };
               emit("did", agent.id, `clicked ${t.botao} on the page — it went through`);
+            } else if (t.ok) {
+              emit("note", agent.id,
+                "the page said the buy went through but produced no signature — " +
+                "not counting it, going to the chain instead");
             } else emit("note", agent.id, `the page did not complete it (${t.aviso}) — going straight to the chain`);
           } catch (e) {
             emit("note", agent.id, `on-screen trade failed (${e.message}) — going straight to the chain`);
@@ -3324,9 +3354,17 @@ async function apply(agent, action) {
             const aba = await chrome2.getAgentPage(agent.id);
             emit("did", agent.id, `going to the sell tab on pump.fun — ${pctNum}% out`);
             const v = await tp.venderNaTela(aba, { mint: pos.market, pct: pctNum });
-            if (v.ok) {
-              r = { ok: true, signature: v.assinatura || null, url: v.url || null };
+            /* ASSINATURA OU NAO ACONTECEU — igual a compra, e aqui e pior:
+               venda fantasma faz ela achar que SAIU de uma posicao que
+               continua na mao, e `real` preenchido pula a venda pela corrente
+               logo abaixo. A saida de verdade nunca seria tentada. */
+            if (v.ok && v.assinatura) {
+              r = { ok: true, signature: v.assinatura, url: v.url || null };
               emit("did", agent.id, `clicked ${v.botao} — the sale went through on the page`);
+            } else if (v.ok) {
+              emit("note", agent.id,
+                "the page said the sale went through but produced no signature — " +
+                "not counting it, selling on-chain instead");
             } else emit("note", agent.id, `the page did not complete the sale (${v.aviso}) — selling on-chain`);
           } catch (e) {
             emit("note", agent.id, `on-screen sale failed (${e.message}) — selling on-chain`);
