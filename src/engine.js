@@ -701,6 +701,12 @@ function loadCheckpoint() {
     if (state.agents[id]) state.agents[id].system = null;
   }
 
+  /* O CONTADOR DE RECUSA NAO ATRAVESSA O BOOT. Ele caia no retrato junto com
+     o resto: voltando com 6 la dentro, a PRIMEIRA recusa dava 7 e o motor
+     parava na hora — apareceu duas vezes seguidas na tela (ENGINE STOPPED 7,
+     depois 8) e ela nunca voltaria sozinha. Um restart e uma tentativa nova. */
+  state.refusalStreak = 0;
+
   /* POSICAO "REAL" SEM ASSINATURA NUNCA ACONTECEU. (02/09/2026)
      O clique na pagina dizia que a compra deu certo sem produzir assinatura, e
      o codigo aceitava — cinco posicoes de $2 no quadro contra UMA na corrente.
@@ -4402,10 +4408,20 @@ async function turn(agent) {
     /* O TEXTO RECUSADO, GUARDADO. Sem isto so da pra chutar qual pedaco o
        modelo nao aceita — e eu ja chutei errado duas vezes hoje. Cai no
        checkpoint e sai por /api/vida; some no primeiro turno que passar. */
+    /* AS LICOES SAEM DO RETRATO. Elas sozinhas sao 53 mil de uma situacao de
+       95 mil, entao guardar "os primeiros 60 mil" guardava so elas — e o que
+       eu preciso olhar (a sala, o X, as posicoes, a pergunta) vem depois. */
+    const iLic = situation.indexOf("YOUR LESSONS (you wrote these):");
+    const fimLic = iLic >= 0 ? situation.indexOf(String.fromCharCode(10, 10), iLic + 40) : -1;
+    const semLicoes = (iLic >= 0 && fimLic > iLic)
+      ? situation.slice(0, iLic) +
+        `[LICOES OMITIDAS AQUI: ${fimLic - iLic} chars]` + situation.slice(fimLic)
+      : situation;
     state.ultimaRecusa = {
       quando: Date.now(), tick: state.tick,
       tamanho: situation.length,
-      situacao: situation.slice(0, 60000),
+      licoes: iLic >= 0 && fimLic > iLic ? fimLic - iLic : 0,
+      situacao: semLicoes.slice(0, 60000),
     };
     if (state.refusalStreak === 2 || state.refusalStreak === 4) {
       log(`!! recusa ${state.refusalStreak} seguida — refazendo o turno enxuto`);
