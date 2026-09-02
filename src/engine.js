@@ -2347,8 +2347,12 @@ const MOVEL_DA_ACAO = {
   aspire: "cafe", remember: "cafe", borrow: "cafe", bill: "cafe",
   // Pedir uma capacidade e pensar sobre si, nao trabalhar: mesmo lugar.
   ask: "cafe",
-  // Perguntar tambem e pensar sobre si — mesmo lugar.
-  consult: "cafe",
+  /* CONSULTAR E IR FALAR COM ALGUEM. O robozinho do Claude fica em cima da
+     caixa; ela atravessa o quarto e conversa ali, na frente de quem assiste.
+     Era "cafe" — do outro lado do quarto, sem ninguem pra falar. Decisao do
+     Michel em 02/09/2026: "melhor ela ir ate o robo do claude em cima da
+     caixa e fazer a consulta". */
+  consult: "caixa",
   // Encomendar uma ferramenta e trabalho: o PC.
   escrever: "mesa", rodar: "mesa",
   // Parar de verdade.
