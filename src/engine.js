@@ -1144,7 +1144,7 @@ function incomeMix(recentEarned) {
    turno seria desperdicio num numero que muda quando ELA mexe. */
 /* QUANTO ELA DEVE TER DA PROPRIA MOEDA, em dolar. Decisao do Michel. */
 const ALVO_MOEDA_USD = num("ALVO_MOEDA_USD", 10);
-let saldoMoeda = { tokens: null, gastoUsd: null, quando: 0 };
+let saldoMoeda = { tokens: null, gastoUsd: null, porSig: null, solUsd: 0, quando: 0 };
 function atualizarSaldoMoeda(agent) {
   if (!cfg.liveChatMint) return;
   if (Date.now() - saldoMoeda.quando < 60000) return;
@@ -1157,13 +1157,16 @@ function atualizarSaldoMoeda(agent) {
   /* QUANTO ELA JA POS NA PROPRIA MOEDA, somado dos recibos da corrente. Contar
      "tem tokens" nao servia: com $2,20 comprados a instrucao calava achando
      que estava cumprida, e o pedido era $10. */
-  Promise.all([onchain.historicoDeTrades(addr, { limite: 25 }), solPriceUsd()])
+  Promise.all([onchain.historicoDeTrades(addr, { limite: 30 }), solPriceUsd()])
     .then(([ops, preco]) => {
       if (!(preco > 0)) return;
-      const gasto = (ops || [])
-        .filter((o) => o.mint === cfg.liveChatMint && o.tokenDelta > 0)
-        .reduce((soma, o) => soma + Math.abs(o.solDelta || 0), 0);
-      saldoMoeda.gastoUsd = gasto * preco;
+      saldoMoeda.solUsd = preco;
+      const m = new Map();
+      for (const o of (ops || []))
+        if (o.mint === cfg.liveChatMint && o.tokenDelta > 0 && o.assinatura)
+          m.set(o.assinatura, Math.abs(o.solDelta || 0));
+      saldoMoeda.porSig = m;
+      saldoMoeda.gastoUsd = [...m.values()].reduce((a, b) => a + b, 0) * preco;
     })
     .catch(() => {});
 }
@@ -1623,7 +1626,25 @@ function situationFor(agent, shift = { label: "fixed" }) {
     /* A META E EM DOLAR GASTO, nao "tem tokens": ela comprou $2,20 (o teto
        geral grampeou a ordem) e a instrucao teria calado achando que estava
        cumprida. O teto agora nao vale pra moeda dela. */
-    const posto = saldoMoeda.gastoUsd;
+    /* SO CONTA O QUE TEM RECIBO, e cada assinatura uma vez so.
+       Tres numeros para o mesmo fato hoje: o quadro dizia $15,49, a corrente
+       $4,20, e uma das assinaturas do quadro NAO EXISTE na blockchain —
+       capturada, mas a transacao nunca chegou. Somar `sizeUsd` do quadro
+       incluiria essa e calaria a instrucao achando que acabou; ler so o RPC
+       perde a compra recem-feita que ainda nao indexou e faz o prompt pedir de
+       novo (ela comprou quatro vezes por causa disso e reparou antes de mim).
+       Recibo so existe pra transacao confirmada. Uniao das duas fontes pela
+       assinatura resolve os dois lados. */
+    const porAssinatura = new Map();
+    for (const x of [...(state.positions ?? []), ...(state.closed ?? [])]) {
+      if (x.market !== cfg.liveChatMint || x.agent !== agent.id) continue;
+      const rec = x.real?.recibo;
+      if (rec?.solDelta && x.real?.signature) porAssinatura.set(x.real.signature, Math.abs(rec.solDelta));
+    }
+    for (const [sig, sol] of (saldoMoeda.porSig ?? new Map())) porAssinatura.set(sig, sol);
+    const solPosto = [...porAssinatura.values()].reduce((a, b) => a + b, 0);
+    const posto = solPosto > 0 ? solPosto * (saldoMoeda.solUsd || 0)
+                : saldoMoeda.gastoUsd;
     const temTudo = posto != null && posto >= ALVO_MOEDA_USD - 0.5;
     if (temTudo) {
       L.push(`You hold ${(saldoMoeda.tokens ?? 0).toLocaleString("en-US")} of it — $${posto.toFixed(2)} of`);
@@ -4023,7 +4044,31 @@ async function reconciliarComACarteira() {
     emit("system", null, `could not read the wallet to reconcile (${e.message}) — leaving the board as it is`);
     return;
   }
-  const fantasmas = reais.filter((p) => !tem.has(p.market));
+  /* ASSINATURA SEM RECIBO NAO E COMPRA. (02/09/2026)
+     Alem das posicoes sem assinatura nenhuma, ha as que TEM assinatura e mesmo
+     assim nunca chegaram: capturada da pagina, transacao que falhou ou nunca
+     foi enviada. Medida hoje numa compra de $5,73 que so existia no quadro.
+     So confere as recentes: recibo antigo pode ter saido da janela do RPC. */
+  const recentes = reais.filter((p) => p.real?.signature && !p.real.recibo &&
+                                       Date.now() - (p.t ?? 0) < 6 * 3600000);
+  for (const p of recentes) {
+    const rec = await onchain.lerRecibo(p.real.signature, dono, p.market, { tentativas: 3 })
+      .catch(() => null);
+    if (rec && !rec.erro) { p.real.recibo = rec; continue; }
+    p.__semCorrente = true;
+  }
+  const semCorrente = recentes.filter((p) => p.__semCorrente);
+  if (semCorrente.length) {
+    state.positions = (state.positions || []).filter((p) => !semCorrente.includes(p));
+    for (const f of semCorrente)
+      emit("system", f.agent,
+        `THE BOARD WAS WRONG about a $${f.sizeUsd.toFixed(2)} buy on ${String(f.market).slice(0, 8)}… — ` +
+        "it had a signature but no transaction on the chain. Signature captured is not " +
+        "transaction confirmed. It is not yours, so it is off the board.");
+    log(`${semCorrente.length} posicao(oes) com assinatura mas sem transacao removidas.`);
+  }
+
+  const fantasmas = reais.filter((p) => !tem.has(p.market) && !p.__semCorrente);
   if (!fantasmas.length) return;
 
   /* NAO DESCARTA: FECHA.
