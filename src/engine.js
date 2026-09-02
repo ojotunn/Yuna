@@ -1701,6 +1701,14 @@ function situationFor(agent, shift = { label: "fixed" }) {
     L.push("And you do not need to be answered first. A room you are never in is a room");
     L.push("that stops filling up; saying the thing you just noticed, unprompted, is how a");
     L.push("person is present somewhere.");
+    /* O TAMANHO, dito antes de ela escrever. Ela mandou 678 caracteres num
+       lugar onde a maior mensagem tem 56 e a pump engoliu calada — melhor ela
+       saber a forma do lugar do que descobrir por recusa. */
+    L.push(`THAT ROOM IS SHORT-FORM. Everything in it is one or two lines — the longest`);
+    L.push(`message on the board right now is 56 characters. Anything much past ${TETO_SALA} gets`);
+    L.push("swallowed without a word: the server takes it and shows it to nobody. Write for");
+    L.push("that room, not for your journal. One thought, said once, in the space of a");
+    L.push("breath. The long version belongs on the stage, where it already goes.");
     L.push("");
     const msgs = chat.fresh(cfg.liveChatMint, agent.id, cfg.chatPerTurn);
     if (msgs.length) {
@@ -2031,8 +2039,9 @@ function situationFor(agent, shift = { label: "fixed" }) {
 const ROOM_DENIAL = {
   /* A pump aceitou e nao transmitiu — shadowban, quase sempre por repeticao.
      Ela precisa SABER, senao continua falando no vazio o show inteiro. */
-  "undelivered": "the room took your message and never showed it to anyone — " +
-    "that happens after repeating yourself. Say something different, later.",
+  "undelivered": "the room took your message and showed it to nobody. Two things do " +
+    "that: a message far longer than the room's own (everything there is one or two " +
+    "lines), or repeating yourself. Make it shorter and different, and try later.",
   "unauthenticated": "the room would not take you as yourself — the door did not open",
   "token-gated": "that room only takes holders, and you hold none of it",
   "rate-limited": "the room is throttling you — wait before speaking again",
@@ -2398,6 +2407,12 @@ function agentAddress(agentId) {
   return addr;
 }
 
+/* QUANTO A SALA AGUENTA. Medido em 02/09: das 50 mensagens visiveis, a maior
+   tem 56 caracteres e a mediana 15. Ela mandava 678 e a pump engolia calada —
+   ack sim, transmissao nao. 240 e folgado pra sala e curto o bastante pra
+   passar; ajustavel se o numero se provar outro. */
+const TETO_SALA = num("ROOM_MAX_CHARS", 240);
+
 async function postToRoom(agent, text) {
   if (!cfg.roomPostEnabled || !cfg.liveChatMint) return;
   if (agent.roomBlockedUntil && state.tick < agent.roomBlockedUntil) return;
@@ -2413,7 +2428,12 @@ async function postToRoom(agent, text) {
   try { cookies = await chrome.cookiesFor(agent.id); }
   catch (e) { log(`${agent.name}: cookies indisponiveis (${e.message})`); }
 
-  const r = await chat.sendAs(cfg.liveChatMint, text, { cookies, address });
+  /* CORTA NO FIM DE UMA FRASE, nunca no meio de uma palavra — e so como rede:
+     o prompt ja diz a ela que a sala e curta, entao isto quase nunca dispara. */
+  const curto = primeiraFrase(text, TETO_SALA);
+  if (curto.length < text.length)
+    log(`[sala] cortado de ${text.length} para ${curto.length} chars`);
+  const r = await chat.sendAs(cfg.liveChatMint, curto, { cookies, address });
 
   if (r.ok) {
     emit("did", agent.id, `said that out loud in the room, as ${r.username ?? "itself"}`);
