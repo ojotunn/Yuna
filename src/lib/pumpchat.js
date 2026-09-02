@@ -232,11 +232,12 @@ function naListaDaSala(room, id) {
    terceiro carregaria, e procura a mensagem. E a mesma coisa que eu fiz na mao
    pra descobrir que ela nao aparecia — so que agora o motor faz sozinho.
    Conexao curta e barata: ela posta poucas vezes por hora. */
-function conferirComoTerceiro(mint, id, esperaMs = 3500) {
+function conferirComoTerceiro(mint, id, esperaMs = 3000) {
   return new Promise((resolve) => {
     let ws = null, pronto = false;
     const fim = (r) => { if (pronto) return; pronto = true; try { ws?.close(); } catch {} resolve(r); };
-    const timer = setTimeout(() => fim(false), esperaMs + 6000);
+    /* Orcamento fechado: 3s de escuta mais 4s de folga pra abrir a conexao. */
+    const timer = setTimeout(() => fim(false), esperaMs + 4000);
     try {
       ws = new WebSocket(URL, { headers: { origin: "https://pump.fun", "user-agent": UA } });
     } catch { clearTimeout(timer); return resolve(false); }
@@ -284,7 +285,12 @@ function confirmarEntrega(mint, id, janelaMs = 4000) {
   });
 }
 
-export function sendAs(mint, text, { cookies, address, timeout = 12000 } = {}) {
+/* 30s, NAO 12. O caminho ficou mais longo de proposito: ack, espera de 4s pelo
+   socket da sala e, se ela nao voltar, uma conferencia numa conexao nova. Com
+   12s o teto disparava no meio da conferencia e a mensagem virava "a sala esta
+   inalcancavel" — falso, e um diagnostico errado ensinado a ela. Ela posta
+   poucas vezes por hora; esperar nao custa nada. */
+export function sendAs(mint, text, { cookies, address, timeout = 30000 } = {}) {
   return new Promise((resolve) => {
     const msg = String(text ?? "").trim();
     if (!msg) return resolve({ ok: false, code: "empty" });
