@@ -1,0 +1,160 @@
+<meta charset="utf-8">
+<title>Marcar o que esta ruim</title>
+<style>
+  html,body{margin:0;background:#121017;color:#e8e4f0;
+    font:13px system-ui,-apple-system,sans-serif;overflow:hidden}
+  .topo{position:fixed;top:0;left:0;right:0;z-index:5;padding:9px 14px;
+    background:rgba(18,16,23,.95);border-bottom:1px solid #2c2839;
+    display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  button{background:#2a2636;color:#e8e4f0;border:1px solid #443d5c;
+    border-radius:5px;padding:6px 12px;font-size:12.5px;cursor:pointer}
+  button:hover{background:#37314a}
+  button.ok{background:#2f6d46;border-color:#3f8f5e}
+  button.mau{background:#6d2f36;border-color:#8f3f48}
+  label{display:flex;gap:6px;align-items:center;color:#c9c2da;cursor:pointer}
+  input[type=checkbox]{accent-color:#c96ad8;width:15px;height:15px}
+  input[type=range]{width:100px;accent-color:#c96ad8}
+  .dica{color:#8b83a1;font-size:12px}
+  canvas{display:block;cursor:crosshair}
+  .lista{position:fixed;right:12px;top:52px;width:250px;max-height:70vh;
+    overflow:auto;background:rgba(24,21,32,.95);border:1px solid #2c2839;
+    border-radius:6px;padding:10px;font-size:12.5px;z-index:4}
+  .lista h3{margin:0 0 8px;font-size:11px;letter-spacing:.08em;
+    text-transform:uppercase;color:#8b83a1;font-weight:600}
+  .item{display:flex;gap:6px;align-items:flex-start;padding:5px 0;
+    border-bottom:1px solid #262233}
+  .item:last-child{border:0}
+  .item b{color:#ff7f8c;font-family:ui-monospace,monospace;font-size:11px}
+  .item input{flex:1;background:#1b1826;border:1px solid #332c46;
+    border-radius:4px;color:#e8e4f0;padding:3px 6px;font-size:12px;min-width:0}
+  .item button{padding:2px 7px;font-size:11px}
+  .vazio{color:#6f6884;font-style:italic}
+</style>
+
+<div class="topo">
+  <b>Marque o que esta ruim</b>
+  <span class="dica">Clique no modelo. Arraste para girar.</span>
+  <label><input type="checkbox" id="pix"> Resolucao baixa</label>
+  <label>zoom <input type="range" id="zm" min="40" max="260" value="110"></label>
+  <button onclick="desfazer()">Desfazer (Z)</button>
+  <button class="mau" onclick="limpar()">Limpar tudo</button>
+  <button class="ok" onclick="salvar()">SALVAR</button>
+  <span class="dica" id="st"></span>
+</div>
+
+<div class="lista">
+  <h3>Pontos marcados</h3>
+  <div id="itens"><p class="vazio">nenhum ainda</p></div>
+</div>
+
+<canvas id="c"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+const c = document.getElementById("c");
+const ren = new THREE.WebGLRenderer({canvas:c, antialias:true});
+ren.setClearColor(0x121017);
+ren.outputEncoding = THREE.sRGBEncoding;
+const cena = new THREE.Scene();
+
+let zoom = 1.10;
+const cam = new THREE.OrthographicCamera(-1,1,1,-1,-500,900);
+function encaixar(){
+  const a = innerWidth/innerHeight;
+  cam.left=-zoom*a*1.6; cam.right=zoom*a*1.6; cam.top=zoom*1.6; cam.bottom=-zoom*1.6;
+  cam.updateProjectionMatrix();
+}
+cam.position.set(40,32,40); cam.lookAt(0,0,0);
+
+cena.add(new THREE.AmbientLight(0xd0c8dd, 1.4));
+const sol = new THREE.DirectionalLight(0xffffff, 1.0); sol.position.set(6,11,4); cena.add(sol);
+const frio = new THREE.DirectionalLight(0x9fdcff, 0.3); frio.position.set(-7,4,-5); cena.add(frio);
+
+const mundo = new THREE.Group(); cena.add(mundo);
+const gMarcas = new THREE.Group(); mundo.add(gMarcas);
+let casa = null, marcas = [];
+
+new THREE.GLTFLoader().load("/3d/CASA-SEM-COZINHA.glb", (g)=>{
+  casa = g.scene;
+  const cx = new THREE.Box3().setFromObject(casa);
+  const t = cx.getSize(new THREE.Vector3());
+  const meio = cx.getCenter(new THREE.Vector3());
+  const s = 2.6/Math.max(t.x,t.y,t.z);
+  casa.scale.setScalar(s);
+  casa.position.copy(meio).multiplyScalar(-s);
+  casa.traverse(o=>{ if(o.isMesh && o.material.map) o.material.map.encoding = THREE.sRGBEncoding; });
+  mundo.add(casa);
+  document.getElementById("st").textContent = "modelo carregado";
+}, undefined, (e)=>{ document.getElementById("st").textContent = "erro ao carregar: " + e; });
+
+/* CLIQUE = RAIO. Dispara do cursor pra dentro da cena e marca onde bateu no
+   modelo. A posicao fica em coordenada LOCAL da casa, entao continua valendo
+   depois de girar. */
+const raio = new THREE.Raycaster();
+const ponteiro = new THREE.Vector2();
+
+function marcar(ev){
+  if (!casa || arrastou) return;
+  const r = c.getBoundingClientRect();
+  ponteiro.x = ((ev.clientX-r.left)/r.width)*2-1;
+  ponteiro.y = -((ev.clientY-r.top)/r.height)*2+1;
+  raio.setFromCamera(ponteiro, cam);
+  const hits = raio.intersectObject(casa, true);
+  if (!hits.length) return;
+  const p = casa.worldToLocal(hits[0].point.clone());
+  marcas.push({ p:[+p.x.toFixed(4), +p.y.toFixed(4), +p.z.toFixed(4)], nota:"" });
+  const e = new THREE.Mesh(
+    new THREE.SphereGeometry(0.055, 12, 10),
+    new THREE.MeshBasicMaterial({color:0xff5566}));
+  e.position.copy(hits[0].point);
+  mundo.worldToLocal(e.position);
+  gMarcas.add(e);
+  render();
+}
+
+function render(){
+  const d = document.getElementById("itens");
+  if (!marcas.length){ d.innerHTML = '<p class="vazio">nenhum ainda</p>'; return; }
+  d.innerHTML = marcas.map((m,i)=>
+    `<div class="item"><b>${i+1}</b>`
+    + `<input value="${m.nota.replace(/"/g,'&quot;')}" placeholder="o que esta ruim aqui"`
+    + ` oninput="marcas[${i}].nota=this.value">`
+    + `<button onclick="apagar(${i})">x</button></div>`).join("");
+  document.getElementById("st").textContent = marcas.length + " ponto(s)";
+}
+function apagar(i){ marcas.splice(i,1); gMarcas.remove(gMarcas.children[i]); render(); }
+function desfazer(){ if(marcas.length) apagar(marcas.length-1); }
+function limpar(){ marcas=[]; gMarcas.clear(); render(); }
+
+async function salvar(){
+  const r = await fetch("/salvar-marcas", {method:"POST",
+    headers:{"content-type":"application/json"}, body:JSON.stringify({marcas})});
+  document.getElementById("st").textContent = r.ok
+    ? `gravado: ${marcas.length} ponto(s)` : "falhou ao gravar";
+}
+
+let arr=false, ux=0, uy=0, arrastou=false;
+c.onmousedown = e=>{ arr=true; arrastou=false; ux=e.clientX; uy=e.clientY; };
+onmouseup = e=>{ if(arr && !arrastou) marcar(e); arr=false; };
+onmousemove = e=>{
+  if(!arr) return;
+  if (Math.abs(e.clientX-ux)+Math.abs(e.clientY-uy) > 4) arrastou = true;
+  mundo.rotation.y += (e.clientX-ux)*0.008;
+  ux=e.clientX; uy=e.clientY;
+};
+onwheel = e=>{ zoom = Math.max(0.4,Math.min(2.6, zoom+e.deltaY*0.0009));
+               document.getElementById("zm").value = Math.round(zoom*100); encaixar(); };
+document.getElementById("zm").oninput = e=>{ zoom=+e.target.value/100; encaixar(); };
+onkeydown = e=>{ if(e.key.toLowerCase()==="z") desfazer(); };
+
+function laco(){
+  requestAnimationFrame(laco);
+  const esc = document.getElementById("pix").checked ? 0.34 : 1;
+  const w = Math.round(innerWidth*esc), h = Math.round(innerHeight*esc);
+  if (c.width !== w){ ren.setSize(w,h,false); c.style.width="100vw"; c.style.height="100vh"; }
+  encaixar();
+  ren.render(cena, cam);
+}
+laco();
+</script>
