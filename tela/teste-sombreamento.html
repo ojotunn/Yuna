@@ -97,9 +97,15 @@ const RAMPA = (()=>{ const d=new Uint8Array([0,140,255]);
   const t=new THREE.DataTexture(d,3,1,THREE.RedFormat);
   t.minFilter=t.magFilter=THREE.NearestFilter; t.needsUpdate=true; return t; })();
 
-cena.add(new THREE.AmbientLight(0x8a76a8, 1.15));
-const sol = new THREE.DirectionalLight(0xffe6f7, 1.5);  sol.position.set(4,7,3);  cena.add(sol);
-const neon = new THREE.DirectionalLight(0xff5fc8, 0.6); neon.position.set(-5,2,2); cena.add(neon);
+/* LUZ NEUTRA. A cor do movel mora na TEXTURA; a luz so multiplica. Luz
+   colorida forte tinge tudo e a gente perde a cor que a arte dele definiu.
+   Medido: o roxo #301830 e dominante no recorte 2D E na textura do Meshy —
+   quem estava deixando o sofa vermelho eram estas luzes, antes rosadas. */
+cena.add(new THREE.AmbientLight(0xb9b2c9, 1.25));
+const sol = new THREE.DirectionalLight(0xffffff, 1.35); sol.position.set(4,7,3);  cena.add(sol);
+/* O neon rosa fica, mas de raspao e por tras — e assim que ele bate no quarto
+   dela: contorna, nao pinta. */
+const neon = new THREE.DirectionalLight(0xff86d2, 0.28); neon.position.set(-5,2.5,-3); cena.add(neon);
 
 let raiz = null, contorno = null;
 /* Espessura da linha, em unidades do modelo. Vira controle na barra de cima

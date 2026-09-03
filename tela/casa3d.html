@@ -1,0 +1,145 @@
+<meta charset="utf-8">
+<title>A casa em 3D</title>
+<style>
+  html,body{margin:0;background:#131119;color:#e8e4f0;
+    font:13px system-ui,-apple-system,sans-serif;overflow:hidden}
+  .topo{position:fixed;top:0;left:0;right:0;z-index:5;padding:10px 14px;
+    background:rgba(19,17,25,.93);border-bottom:1px solid #2e2a3c;
+    display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  label{display:flex;gap:6px;align-items:center;color:#c9c2da;cursor:pointer}
+  input[type=checkbox]{accent-color:#c96ad8;width:15px;height:15px}
+  input[type=range]{width:110px;accent-color:#c96ad8}
+  b{color:#e8e4f0}
+  #num{font-family:ui-monospace,monospace;color:#c96ad8}
+  canvas{display:block;image-rendering:pixelated;cursor:grab}
+  .ref{position:fixed;right:12px;bottom:12px;width:290px;opacity:.5;
+    border:1px solid #2e2a3c;border-radius:5px;pointer-events:none}
+</style>
+
+<div class="topo">
+  <b>A casa em 3D</b>
+  <label><input type="checkbox" id="piso" checked> Piso</label>
+  <label><input type="checkbox" id="paredes" checked> Paredes</label>
+  <label><input type="checkbox" id="grade"> Grade</label>
+  <label><input type="checkbox" id="pix" checked> Resolucao baixa</label>
+  <label>altura da parede <input type="range" id="alt" min="10" max="300" value="130"></label>
+  <label>girar <input type="range" id="gir" min="0" max="360" value="0"></label>
+  <span id="num"></span>
+</div>
+
+<img class="ref" src="/casa/CASA-PLANTA.png" alt="">
+<canvas id="c"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+const c = document.getElementById("c");
+const ren = new THREE.WebGLRenderer({canvas:c, antialias:false});
+ren.setClearColor(0x131119);
+const cena = new THREE.Scene();
+
+/* CAMERA ORTOGRAFICA na diagonal classica de 2:1. E o mesmo angulo do desenho
+   2D dela — por isso a casa vai parecer a mesma planta. */
+let zoom = 520;   // meia-altura em centesimos de unidade: a casa tem ~7
+const cam = new THREE.OrthographicCamera(-1,1,1,-1,-200,400);
+function encaixar(){
+  const a = innerWidth/innerHeight;
+  cam.left=-zoom*a/100; cam.right=zoom*a/100; cam.top=zoom/100; cam.bottom=-zoom/100;
+  cam.updateProjectionMatrix();
+}
+cam.position.set(30, 30, 30);
+cam.lookAt(0,0,0);
+
+cena.add(new THREE.AmbientLight(0xbdb4cf, 1.15));
+const sol = new THREE.DirectionalLight(0xffffff, 1.25); sol.position.set(6,12,4); cena.add(sol);
+const frio = new THREE.DirectionalLight(0x7fd4ff, 0.35); frio.position.set(-7,4,-5); cena.add(frio);
+
+/* Rampa de 3 degraus. RedFormat: LuminanceFormat foi removido no WebGL2 e
+   deixa a rampa preta — errei nisso uma vez hoje. */
+const RAMPA = (()=>{ const d=new Uint8Array([70,165,255]);
+  const t=new THREE.DataTexture(d,3,1,THREE.RedFormat);
+  t.minFilter=t.magFilter=THREE.NearestFilter; t.needsUpdate=true; return t; })();
+
+const mundo = new THREE.Group(); cena.add(mundo);
+const gPiso = new THREE.Group(); const gParede = new THREE.Group();
+mundo.add(gPiso); mundo.add(gParede);
+const grade = new THREE.GridHelper(30, 30, 0x4a4160, 0x2a2438);
+grade.visible = false; mundo.add(grade);
+
+const matPiso = new THREE.MeshToonMaterial({color:0x6d4a70, gradientMap:RAMPA});
+const matParede = new THREE.MeshToonMaterial({color:0x50406b, gradientMap:RAMPA});
+
+let ALTURA = 1.30;
+let dados = null;
+
+fetch("/casa/piso-3d.json").then(r=>r.json()).then(d=>{ dados = d; construir(); });
+
+function construir(){
+  gPiso.clear(); gParede.clear();
+  let area = 0;
+
+  for (const p of dados.poligonos){
+    const forma = new THREE.Shape(p.map(q => new THREE.Vector2(q[0], q[1])));
+    const g = new THREE.ExtrudeGeometry(forma, {depth:0.10, bevelEnabled:false});
+    /* O poligono veio no plano XZ mas o Shape mora em XY: deita ele. */
+    g.rotateX(Math.PI/2);
+    const m = new THREE.Mesh(g, matPiso);
+    m.position.y = 0;
+    gPiso.add(m);
+    // area do poligono, so pra mostrar o numero
+    let a2 = 0;
+    for (let i=0;i<p.length;i++){ const j=(i+1)%p.length;
+      a2 += p[i][0]*p[j][1] - p[j][0]*p[i][1]; }
+    area += Math.abs(a2)/2;
+  }
+
+  /* AS PAREDES saem do CONTORNO EXTERNO do piso: cada aresta da borda vira um
+     painel em pe. Aresta interna (compartilhada por dois poligonos) nao vira
+     parede — senao a casa ficaria cheia de divisoria onde e chao continuo. */
+  const conta = new Map();
+  const chave = (a,b)=> a.map(v=>v.toFixed(2)).join(",")+"|"+b.map(v=>v.toFixed(2)).join(",");
+  for (const p of dados.poligonos){
+    for (let i=0;i<p.length;i++){
+      const a=p[i], b=p[(i+1)%p.length];
+      const k1=chave(a,b), k2=chave(b,a);
+      if (conta.has(k2)) conta.set(k2, conta.get(k2)+1);
+      else conta.set(k1, (conta.get(k1)||0)+1);
+    }
+  }
+  let n=0;
+  for (const [k,v] of conta){
+    if (v > 1) continue;                     // aresta interna: nao vira parede
+    const [sa,sb] = k.split("|");
+    const a = sa.split(",").map(Number), b = sb.split(",").map(Number);
+    const comp = Math.hypot(b[0]-a[0], b[1]-a[1]);
+    if (comp < 0.25) continue;               // lasca de traco, nao e parede
+    const g = new THREE.BoxGeometry(comp, ALTURA, 0.09);
+    const m = new THREE.Mesh(g, matParede);
+    m.position.set((a[0]+b[0])/2, ALTURA/2, (a[1]+b[1])/2);
+    m.rotation.y = -Math.atan2(b[1]-a[1], b[0]-a[0]);
+    gParede.add(m); n++;
+  }
+  document.getElementById("num").textContent =
+    `${dados.poligonos.length} poligonos · ${n} paredes · ${area.toFixed(1)} unidades quadradas de chao`;
+}
+
+for (const [id,alvo] of [["piso",()=>gPiso],["paredes",()=>gParede],["grade",()=>grade]])
+  document.getElementById(id).onchange = e => alvo().visible = e.target.checked;
+document.getElementById("alt").oninput = e => { ALTURA = +e.target.value/100; if(dados) construir(); };
+document.getElementById("gir").oninput = e => mundo.rotation.y = +e.target.value*Math.PI/180;
+
+let arr=false, ux=0;
+c.onmousedown = e => { arr=true; ux=e.clientX; c.style.cursor="grabbing"; };
+onmouseup = ()=>{ arr=false; c.style.cursor="grab"; };
+onmousemove = e => { if(arr){ mundo.rotation.y += (e.clientX-ux)*0.008; ux=e.clientX; } };
+onwheel = e => { zoom = Math.max(120, Math.min(1600, zoom + e.deltaY*0.08)); encaixar(); };
+
+function laco(){
+  requestAnimationFrame(laco);
+  const escala = document.getElementById("pix").checked ? 0.34 : 1;
+  const w = Math.round(innerWidth*escala), h = Math.round(innerHeight*escala);
+  if (c.width !== w){ ren.setSize(w,h,false); c.style.width="100vw"; c.style.height="100vh"; }
+  encaixar();
+  ren.render(cena, cam);
+}
+laco();
+</script>
