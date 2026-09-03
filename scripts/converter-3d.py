@@ -51,7 +51,8 @@ def pedir(url, dados=None, metodo=None):
 
 
 def converter(arquivo):
-    caminho = os.path.join(PECAS, arquivo)
+    # aceita nome de peca OU caminho completo — a casa vazia mora em outra pasta
+    caminho = arquivo if os.path.isabs(arquivo) or os.sep in arquivo or "/" in arquivo               else os.path.join(PECAS, arquivo)
     if not os.path.exists(caminho):
         sys.exit("  nao achei: " + caminho)
     with open(caminho, "rb") as f:
@@ -90,7 +91,9 @@ def converter(arquivo):
             sys.exit("  passou de 10 min, desisti")
 
     os.makedirs(SAIDA, exist_ok=True)
-    nome = os.path.splitext(arquivo)[0]
+    # SO O NOME DO ARQUIVO. Usar o caminho inteiro montava
+    # "quarto/3d/quarto/casa/CASA-VAZIA.glb" e o open falhava.
+    nome = os.path.splitext(os.path.basename(arquivo))[0]
     for fmt in ("glb", "fbx"):
         u = (t.get("model_urls") or {}).get(fmt)
         if not u:
