@@ -1,0 +1,237 @@
+<meta charset="utf-8">
+<title>Sombreamento — o sofa 3D com a cara dela</title>
+<style>
+  html,body{margin:0;background:#15131c;color:#e8e4f0;
+    font:14px system-ui,-apple-system,sans-serif}
+  .topo{padding:12px 16px;border-bottom:1px solid #2e2a3c;display:flex;
+    gap:18px;align-items:center;flex-wrap:wrap}
+  label{display:flex;gap:7px;align-items:center;font-size:13px;color:#c9c2da;cursor:pointer}
+  input[type=checkbox]{accent-color:#c96ad8;width:16px;height:16px}
+  .painel{display:flex;gap:22px;padding:22px;align-items:flex-start;flex-wrap:wrap}
+  .cel{display:flex;flex-direction:column;gap:9px}
+  .cel h2{margin:0;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+    color:#8f88a5;font-weight:600}
+  .moldura{background:#1c1a25;border:1px solid #2e2a3c;border-radius:6px;padding:10px}
+  img.ref{display:block;width:420px;image-rendering:pixelated}
+  #saida{display:block;width:420px;height:420px;image-rendering:pixelated;cursor:grab}
+  #oculto{display:none}
+  .dica{color:#8f88a5;font-size:12.5px;max-width:64ch;line-height:1.55;padding:0 22px 26px}
+  .paleta{display:flex;gap:3px;margin-top:6px}
+  .paleta i{width:19px;height:19px;border-radius:3px;display:block}
+</style>
+
+<div class="topo">
+  <strong style="font-size:13px">Ingredientes</strong>
+  <label><input type="checkbox" id="toon" checked> Luz em degraus</label>
+  <label><input type="checkbox" id="linha"> Contorno</label>
+  <label><input type="checkbox" id="pal"> Paleta travada <span style="color:#7a7290;font-size:11px">(ainda torta)</span></label>
+  <label><input type="checkbox" id="pix" checked> Resolucao baixa</label>
+  <label>contorno
+    <input type="range" id="esp" min="0" max="40" value="12" style="width:90px">
+    <span id="espv" style="font-family:monospace;color:#c96ad8">12</span>
+  </label>
+  <label style="margin-left:auto">resolucao
+    <input type="range" id="res" min="80" max="480" value="150" style="width:130px">
+    <span id="resv" style="font-family:monospace;color:#c96ad8">150</span>px
+  </label>
+</div>
+
+<div class="painel">
+  <div class="cel">
+    <h2>o recorte 2D de hoje</h2>
+    <div class="moldura"><img class="ref" src="/pecas/sofa-r0.png" alt=""></div>
+  </div>
+  <div class="cel">
+    <h2>o mesmo sofa, em 3D, sombreado</h2>
+    <div class="moldura"><canvas id="saida"></canvas></div>
+    <div class="paleta" id="paleta"></div>
+  </div>
+</div>
+
+<canvas id="oculto"></canvas>
+
+<p class="dica">Desmarque um ingrediente de cada vez para ver o que cada um faz.
+O que mais importa e a <b>resolucao baixa</b> &mdash; e ela que devolve o pixel;
+os outros tres sozinhos dao cara de desenho animado, nao de pixel art.
+Arraste o sofa para girar.</p>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+/* A PALETA vem do cenario 2D de hoje, medida com k-means sobre CENARIO-SOLO.png.
+   Travar nela e o que impede o 3D de inventar tom que nao e do quarto dela. */
+let PALETA = [];
+
+/* DOIS CANVAS, de proposito: o WebGL desenha no oculto, e o visivel e 2D —
+   e onde a paleta e aplicada e onde a ampliacao sem suavizacao acontece.
+   O mesmo canvas nao serve pros dois contextos. */
+const oculto = document.getElementById("oculto");
+const saida  = document.getElementById("saida");
+const g2 = saida.getContext("2d", { willReadFrequently: true });
+
+const ren = new THREE.WebGLRenderer({canvas: oculto, antialias: false, alpha: true});
+const cena = new THREE.Scene();
+
+/* CAMERA ISOMETRICA de verdade: ortografica, nao perspectiva. E o que faz as
+   linhas paralelas continuarem paralelas, como no desenho dela. */
+const L = 1.75;
+const cam = new THREE.OrthographicCamera(-L, L, L, -L, 0.1, 100);
+cam.position.set(6, 5.2, 6);
+cam.lookAt(0, 0.4, 0);
+
+/* LUZ EM DEGRAUS: rampa de 3 tons no lugar do gradiente suave. */
+function rampa(n){
+  const d = new Uint8Array(n);
+  for (let i=0;i<n;i++) d[i] = Math.round(i/(n-1)*255);
+  /* RedFormat, NAO LuminanceFormat: o segundo foi removido no WebGL2 e a
+     rampa virava preta — todo pixel caia no degrau mais escuro e o movel
+     saia como um borrao. Custou uma sessao de depuracao em 02/09. */
+  const t = new THREE.DataTexture(d, n, 1, THREE.RedFormat);
+  t.minFilter = t.magFilter = THREE.NearestFilter;
+  t.needsUpdate = true;
+  return t;
+}
+/* Degraus escolhidos a mao: 0 / 140 / 255. Rampa uniforme deixa o meio-tom
+   escuro demais nesta paleta, que ja e roxa e sem brilho. */
+const RAMPA = (()=>{ const d=new Uint8Array([0,140,255]);
+  const t=new THREE.DataTexture(d,3,1,THREE.RedFormat);
+  t.minFilter=t.magFilter=THREE.NearestFilter; t.needsUpdate=true; return t; })();
+
+cena.add(new THREE.AmbientLight(0x8a76a8, 1.15));
+const sol = new THREE.DirectionalLight(0xffe6f7, 1.5);  sol.position.set(4,7,3);  cena.add(sol);
+const neon = new THREE.DirectionalLight(0xff5fc8, 0.6); neon.position.set(-5,2,2); cena.add(neon);
+
+let raiz = null, contorno = null;
+/* Espessura da linha, em unidades do modelo. Vira controle na barra de cima
+   porque o valor certo depende do tamanho do movel na tela. */
+let ESPESSURA = 0.012;
+
+new THREE.GLTFLoader().load("/3d/sofa-r0.glb", (g) => {
+  raiz = g.scene;
+  const cx = new THREE.Box3().setFromObject(raiz);
+  const tam = cx.getSize(new THREE.Vector3());
+  const meio = cx.getCenter(new THREE.Vector3());
+  const s = 2.0 / Math.max(tam.x, tam.y, tam.z);
+  raiz.scale.setScalar(s);
+  raiz.position.copy(meio).multiplyScalar(-s);
+  cena.add(raiz);
+
+  /* CONTORNO por casco invertido, EMPURRADO PELA NORMAL — nao por escala.
+     Escalar multiplica a distancia ate a origem: num sofa largo e baixo, o
+     topo estufa e a base nao mexe, e o contorno vira um halo disforme. Aqui
+     cada vertice anda uma distancia FIXA na direcao da sua propria normal,
+     entao a linha tem a mesma espessura em toda a volta. */
+  contorno = raiz.clone(true);
+  contorno.traverse((o)=>{
+    if (!o.isMesh) return;
+    const g = o.geometry.clone();
+    const pos = g.attributes.position, nor = g.attributes.normal;
+    if (nor) {
+      for (let i = 0; i < pos.count; i++) {
+        pos.setXYZ(i,
+          pos.getX(i) + nor.getX(i) * ESPESSURA,
+          pos.getY(i) + nor.getY(i) * ESPESSURA,
+          pos.getZ(i) + nor.getZ(i) * ESPESSURA);
+      }
+      pos.needsUpdate = true;
+    }
+    o.geometry = g;
+    o.material = new THREE.MeshBasicMaterial({color:0x150f20, side:THREE.BackSide});
+  });
+  cena.add(contorno);
+
+  aplicar();
+});
+
+function aplicar(){
+  if (!raiz) return;
+  const toon = document.getElementById("toon").checked;
+  raiz.traverse((o)=>{
+    if (!o.isMesh) return;
+    if (!o.userData.orig) o.userData.orig = o.material;
+    o.material = toon
+      ? new THREE.MeshToonMaterial({ map: o.userData.orig.map || null,
+                                     gradientMap: RAMPA,
+                                     color: o.userData.orig.color || 0xffffff })
+      : o.userData.orig;
+  });
+  if (contorno) contorno.visible = document.getElementById("linha").checked;
+}
+
+/* PALETA TRAVADA: puxa cada pixel pra cor mais proxima do quarto dela. */
+function quantizar(w,h){
+  const d = g2.getImageData(0,0,w,h), p = d.data;
+  for (let i=0;i<p.length;i+=4){
+    if (p[i+3] < 8) continue;
+    let melhor=0, dist=1e9;
+    for (let k=0;k<PALETA.length;k++){
+      const q = PALETA[k];
+      const dd = (p[i]-q[0])**2 + (p[i+1]-q[1])**2 + (p[i+2]-q[2])**2;
+      if (dd < dist){ dist = dd; melhor = k; }
+    }
+    p[i]=PALETA[melhor][0]; p[i+1]=PALETA[melhor][1]; p[i+2]=PALETA[melhor][2];
+  }
+  g2.putImageData(d,0,0);
+}
+
+let giro = 0.35, arrastando = false, ultimo = 0;
+saida.onmousedown = (e)=>{ arrastando = true; ultimo = e.clientX; saida.style.cursor="grabbing"; };
+window.onmouseup   = ()=>{ arrastando = false; saida.style.cursor="grab"; };
+window.onmousemove = (e)=>{ if(arrastando){ giro += (e.clientX-ultimo)*0.012; ultimo = e.clientX; } };
+
+const res = document.getElementById("res");
+for (const id of ["toon","linha","pal","pix"]) document.getElementById(id).onchange = aplicar;
+res.oninput = ()=> document.getElementById("resv").textContent = res.value;
+
+/* Refaz o casco quando a espessura muda: a geometria e que carrega o
+   deslocamento, entao nao da pra so mexer num numero no material. */
+const esp = document.getElementById("esp");
+esp.oninput = ()=>{
+  document.getElementById("espv").textContent = esp.value;
+  ESPESSURA = +esp.value / 1000;
+  if (contorno){ cena.remove(contorno); contorno = null; refazerContorno(); }
+};
+function refazerContorno(){
+  if (!raiz) return;
+  contorno = raiz.clone(true);
+  contorno.traverse((o)=>{
+    if (!o.isMesh) return;
+    const g = o.geometry.clone();
+    const pos = g.attributes.position, nor = g.attributes.normal;
+    if (nor) {
+      for (let i=0;i<pos.count;i++)
+        pos.setXYZ(i, pos.getX(i)+nor.getX(i)*ESPESSURA,
+                      pos.getY(i)+nor.getY(i)*ESPESSURA,
+                      pos.getZ(i)+nor.getZ(i)*ESPESSURA);
+      pos.needsUpdate = true;
+    }
+    o.geometry = g;
+    o.material = new THREE.MeshBasicMaterial({color:0x150f20, side:THREE.BackSide});
+  });
+  contorno.visible = document.getElementById("linha").checked;
+  cena.add(contorno);
+}
+
+function laco(){
+  requestAnimationFrame(laco);
+  const R = document.getElementById("pix").checked ? +res.value : 420;
+  if (oculto.width !== R){
+    oculto.width = oculto.height = R;
+    saida.width  = saida.height  = R;
+    ren.setSize(R, R, false);
+  }
+  if (raiz){ raiz.rotation.y = giro; if (contorno) contorno.rotation.y = giro; }
+  ren.render(cena, cam);
+
+  g2.clearRect(0,0,R,R);
+  g2.drawImage(oculto, 0, 0);
+  if (document.getElementById("pal").checked && PALETA.length) quantizar(R,R);
+}
+laco();
+
+fetch("/paleta.json").then(r=>r.json()).then(p=>{
+  PALETA = p;
+  document.getElementById("paleta").innerHTML =
+    p.map(q=>`<i style="background:rgb(${q[0]},${q[1]},${q[2]})"></i>`).join("");
+});
+</script>
