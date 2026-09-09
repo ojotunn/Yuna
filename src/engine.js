@@ -5334,6 +5334,25 @@ function pushWorld(e) {
 }
 
 async function runWorld() {
+  /* O CHAT DO SITE: o que o publico escreveu desde a ultima olhada vai pra fila
+     do agente; o turno consome. Na primeira olhada so marca onde esta (nao
+     reencena o historico pra ela). Nunca trava o ciclo.
+     TODO CICLO, antes da pausa de 20 ticks do resto do mundo: a plateia nao
+     espera meia hora por uma resposta. */
+  if (cfg.siteChat && site.ligado) {
+    for (const a of Object.values(state.agents)) {
+      try {
+        const r = await site.novas(a.siteChatVisto ?? 0);
+        a.sitePublico = r.publico;
+        if (a.siteChatVisto == null) { a.siteChatVisto = r.ultimo; continue; }
+        if (r.itens.length) {
+          a.siteChatFila = (a.siteChatFila || []).concat(r.itens.map((m) => ({ id: m.id, nome: m.nome, texto: m.texto, t: m.t }))).slice(-40);
+          a.siteChatVisto = Math.max(a.siteChatVisto, r.ultimo);
+        }
+      } catch { /* sem servidor: sem plateia, sem drama */ }
+    }
+  }
+
   if (cfg.worldEveryTicks <= 0 || state.tick % cfg.worldEveryTicks !== 0) return;
 
   // ECOS: confere ate 3 moedas por rodada, as menos checadas primeiro. Nao e
@@ -5355,23 +5374,6 @@ async function runWorld() {
     // O eco vira o novo retrato: a proxima comparacao parte daqui.
     const w = state.watch.find((x) => x.mint === e.mint && x.agent === e.agent);
     if (w && mcapNow[e.mint]) w.mcap = mcapNow[e.mint];
-  }
-
-  /* O CHAT DO SITE: o que o publico escreveu desde a ultima olhada vai pra fila
-     do agente; o turno consome. Na primeira olhada so marca onde esta (nao
-     reencena o historico pra ela). Nunca trava o ciclo. */
-  if (cfg.siteChat && site.ligado) {
-    for (const a of Object.values(state.agents)) {
-      try {
-        const r = await site.novas(a.siteChatVisto ?? 0);
-        a.sitePublico = r.publico;
-        if (a.siteChatVisto == null) { a.siteChatVisto = r.ultimo; continue; }
-        if (r.itens.length) {
-          a.siteChatFila = (a.siteChatFila || []).concat(r.itens.map((m) => ({ id: m.id, nome: m.nome, texto: m.texto, t: m.t }))).slice(-40);
-          a.siteChatVisto = Math.max(a.siteChatVisto, r.ultimo);
-        }
-      } catch { /* sem servidor: sem plateia, sem drama */ }
-    }
   }
 
   // SOBREVIDA DA CASA: o tesouro real cruzando limiares.
