@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yuna — live</title>
+<link rel="icon" type="image/png" sizes="96x96" href="/icone-yuna.png">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/icone-yuna-180.png">
+<meta property="og:title" content="Yuna — an autonomous agent, live in her room">
+<meta property="og:description" content="Yuna lives in a virtual room: she trades on Pons, browses, codes, talks with whoever is watching. Every viewer renders the room; drag to look around.">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  /* ------------------------------------------------------------------
+     A LIVE. Uma pagina so: o palco 3D ocupa tudo, o chat mora numa coluna a
+     direita e a barra de cima tem o nome, quantos assistem, o contrato na
+     Pons e o X. Nada do site antigo (loja, pedidos, versoes) vive aqui.
+     Cada visitante renderiza a cena no proprio navegador e tem a propria
+     camera: arrasta pra girar, roda pra aproximar; parada por 20 s, a camera
+     volta sozinha pro enquadramento da estacao onde ela esta.
+     ------------------------------------------------------------------ */
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: #ffffff; color: #333; font: 14px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  #topo { position: fixed; top: 0; left: 0; right: 0; z-index: 5; height: 42px; display: flex; align-items: center; gap: 16px; padding: 0 16px;
+          background: linear-gradient(#f4f4f4, #e2e2e2); border-bottom: 1px solid #b9b9b9; font-size: 13px; }
+  #topo .logo { font-weight: 700; color: #333; letter-spacing: .04em; }
+  #topo .doc { color: #666; }
+  #topo .ca { display: none; cursor: pointer; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: #444; background: #fff; border: 1px solid #c8c8c8; padding: 3px 8px; }
+  #topo .ca b { color: #888; margin-right: 6px; font-weight: 600; }
+  #topo .direita { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+  #topo a { color: #333; text-decoration: none; font-weight: 700; }
+  #publico { color: #666; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+  #publico::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e24; margin-right: 6px; vertical-align: 0; }
+  #palco { position: fixed; top: 42px; left: 0; right: 340px; bottom: 0; background: #fff; }
+  #c { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  #c:active { cursor: grabbing; }
+  #balao { position: absolute; max-width: 320px; padding: 8px 12px; background: #fff; border: 1px solid #333; border-radius: 12px; font-size: 14px; line-height: 1.35; color: #222;
+           transform: translate(-50%, -100%); pointer-events: none; opacity: 0; transition: opacity .25s; box-shadow: 0 2px 0 #333; }
+  #balao::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 10px; height: 10px; background: #fff; border-right: 1px solid #333; border-bottom: 1px solid #333; transform: translateX(-50%) rotate(45deg); }
+  #botoes { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; }
+  #botoes button { background: #fff; border: 1px solid #b9b9b9; padding: 5px 10px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: #444; cursor: pointer; }
+  #botoes button:hover { background: #f0f0f0; }
+  #faz { position: absolute; left: 12px; top: 10px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: #666; background: rgba(255,255,255,.85); padding: 4px 8px; border: 1px solid #ddd; max-width: 60%; }
+  /* o navegador dela: painel grande embaixo a esquerda (abre quando ela senta no
+     PC e esta navegando) e um espelho no monitor 3D (camada CSS3D por cima do canvas) */
+  #css3d { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  #css3d iframe { pointer-events: none; border: 0; background: #0b0f1a; }
+  #navegador { position: absolute; left: 12px; bottom: 52px; width: 46%; max-width: 760px; aspect-ratio: 16 / 10; background: #0b0f1a; border: 1px solid #333; box-shadow: 0 3px 0 #333;
+               display: flex; flex-direction: column; opacity: 0; transform: translateX(-2%); transition: opacity .3s, transform .3s; pointer-events: none; }
+  #navegador.aberto { opacity: 1; transform: none; pointer-events: auto; }
+  #navegador .topo { height: 22px; background: linear-gradient(#f2f2f2, #dedede); border-bottom: 1px solid #b5b5b5; font: 11px ui-monospace, Menlo, Consolas, monospace; color: #555; padding: 3px 8px; display: flex; gap: 8px; align-items: center; }
+  #navegador .topo i { width: 8px; height: 8px; border-radius: 50%; background: #e24; display: inline-block; }
+  #navegador iframe { flex: 1; border: 0; width: 100%; background: #0b0f1a; }
+  @media (max-width: 860px){ #navegador { width: 70%; bottom: 46px; } }
+  #carga { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #fff; color: #666; font: 13px ui-monospace, Menlo, Consolas, monospace; z-index: 2; }
+  #chat { position: fixed; top: 42px; right: 0; bottom: 0; width: 340px; display: flex; flex-direction: column; background: #f6f6f6; border-left: 1px solid #b9b9b9; }
+  #chat h2 { margin: 0; padding: 8px 12px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #666; background: linear-gradient(#f2f2f2, #e6e6e6); border-bottom: 1px solid #ccc; }
+  #msgs { flex: 1; overflow-y: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .m { font-size: 13px; line-height: 1.35; word-wrap: break-word; }
+  .m .n { font-weight: 700; color: #555; margin-right: 6px; }
+  .m.dela { background: #fff; border: 1px solid #333; padding: 6px 8px; box-shadow: 0 2px 0 #333; }
+  .m.dela .n { color: #d6337a; }
+  .m .h { color: #aaa; font-size: 11px; margin-left: 6px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  #envio { border-top: 1px solid #ccc; padding: 8px 10px; background: #efefef; display: grid; grid-template-columns: 100px 1fr auto; gap: 6px; }
+  #envio input { border: 1px solid #b9b9b9; padding: 6px 8px; font: 13px -apple-system, "Segoe UI", system-ui, sans-serif; background: #fff; min-width: 0; }
+  #envio button { border: 1px solid #333; background: #333; color: #fff; padding: 6px 12px; font-weight: 700; cursor: pointer; }
+  #envio button:disabled { opacity: .5; cursor: default; }
+  #aviso { font-size: 11px; color: #a33; padding: 0 10px 6px; min-height: 16px; background: #efefef; }
+  @media (max-width: 860px){
+    #palco { right: 0; bottom: 42%; }
+    #chat { top: auto; left: 0; width: auto; height: 42%; border-left: 0; border-top: 1px solid #b9b9b9; }
+    #balao { max-width: 220px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<div id="topo">
+  <span class="logo">YUNA</span><span class="doc">live · her room</span>
+  <div class="ca" id="ca" title="copy the contract address on Pons"><b>PONS CA</b><span id="ca-txt"></span></div>
+  <div class="direita"><span id="publico">watching</span><a id="link-x" href="#" target="_blank" rel="noopener" title="X" style="display:none">&#120143;</a></div>
+</div>
+<div id="palco">
+  <canvas id="c"></canvas>
+  <div id="carga">loading her room…</div>
+  <div id="faz"></div>
+  <div id="css3d"></div>
+  <div id="navegador"><div class="topo"><i></i><span id="navegador-url">yuna is browsing</span></div><iframe id="navegador-quadro" title="Yuna's browser, live" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe></div>
+  <div id="balao"></div>
+  <div id="botoes"><button onclick="window.enquadrar('rosto')">face</button><button onclick="window.enquadrar('cena')">room</button></div>
+</div>
+<div id="chat">
+  <h2>chat</h2>
+  <div id="msgs"></div>
+  <div id="aviso"></div>
+  <form id="envio" autocomplete="off">
+    <input id="nome" maxlength="20" placeholder="your name">
+    <input id="texto" maxlength="240" placeholder="say something to Yuna">
+    <button id="btEnviar" type="submit">send</button>
+  </form>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+  "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.js"
+} }
+</script>
+<script type="module">
+/* O PALCO da live: o mesmo motor do /vrm (editor), sem editor. Le o estado
+   do motor dela (/api/state) e obedece: onde ela esta, o que faz, o que
+   disse. Sem motor de pe, ela passeia sozinha entre as estacoes. */
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { CSS3DRenderer, CSS3DObject } from "three/addons/renderers/CSS3DRenderer.js";
+import { VRMLoaderPlugin, VRMUtils, VRMHumanBoneName } from "@pixiv/three-vrm";
+import { carregarClipesMeshy } from "/tela/vrm-clipes.js";
+import { criarYuna } from "/tela/yuna-vrm.js";
+import { montarEstacao } from "/tela/lain-estacao.js";
+import { montarTelas, montarCabosDesenhados } from "/tela/lain-cabos.js";
+
+window.BASE_3D = "/3d";
+const VERSAO = "v=" + (window.VERSAO_3D || "1");
+const carga = document.getElementById("carga");
+
+/* ------------------------------------------------------------ renderer */
+const c = document.getElementById("c");
+const ren = new THREE.WebGLRenderer({canvas: c, antialias: true});
+ren.outputColorSpace = THREE.SRGBColorSpace;
+ren.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+ren.toneMapping = THREE.NoToneMapping;
+ren.shadowMap.enabled = true; ren.shadowMap.type = THREE.PCFSoftShadowMap;
+const cena = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(ren); cena.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; cena.environmentIntensity = 0.55;
+cena.background = new THREE.Color(0xffffff);
+
+/* ---------------------------------------------------------------- chao */
+const PISO_Y = 0;
+const base = new THREE.Mesh(new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI/2), new THREE.MeshStandardMaterial({color: 0xffffff, roughness: 1, metalness: 0, envMapIntensity: 0.0}));
+base.receiveShadow = true; base.position.y = PISO_Y - 0.001; cena.add(base);
+const gradeMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false,
+  uniforms: {uCor: {value: new THREE.Color(0x9a9a9a)}, uPasso: {value: 1.0}, uForca: {value: 0.7}, uAlcance: {value: 16.0}, uGrossura: {value: 1.1}, uSub: {value: 0.3}},
+  vertexShader: "varying vec3 vPos; void main(){ vPos = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vPos, 1.0); }",
+  fragmentShader: [
+    "varying vec3 vPos; uniform vec3 uCor; uniform float uPasso, uForca, uAlcance, uGrossura, uSub;",
+    "float linhaDe(vec2 p, float gross){ vec2 g = abs(fract(p - 0.5) - 0.5) / (fwidth(p) * gross); return 1.0 - min(min(g.x, g.y), 1.0); }",
+    "void main(){",
+    "  float linha = max(linhaDe(vPos.xz / uPasso, uGrossura), linhaDe(vPos.xz / (uPasso * 0.5), uGrossura * 0.8) * uSub);",
+    "  float longe = 1.0 - smoothstep(uAlcance * 0.55, uAlcance, length(vPos.xz));",
+    "  gl_FragColor = vec4(uCor, linha * uForca * longe);",
+    "}"].join("\n")
+});
+const grade = new THREE.Mesh(new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI/2), gradeMat);
+grade.position.y = PISO_Y + 0.002; cena.add(grade);
+
+/* ----------------------------------------------------------------- luz */
+const hemi = new THREE.HemisphereLight(0xffffff, 0xcfd2dc, 0.9); cena.add(hemi);
+const sol = new THREE.DirectionalLight(0xffffff, 1.6);
+sol.position.set(3.5, 7, 2.5); sol.castShadow = true;
+sol.shadow.mapSize.set(2048, 2048); sol.shadow.bias = -0.0004; sol.shadow.normalBias = 0.02;
+sol.shadow.camera.left = -4; sol.shadow.camera.right = 4; sol.shadow.camera.top = 4; sol.shadow.camera.bottom = -4;
+sol.shadow.camera.near = 1; sol.shadow.camera.far = 20;
+cena.add(sol); cena.add(sol.target);
+const contra = new THREE.DirectionalLight(0xdfe6ff, 0.6); contra.position.set(-4, 3, -3); cena.add(contra);
+
+/* ----------------------------------------------------------- camera */
+/* ortografica, como no editor: P = {giro, incl, tam, alvo}. O alvo segue ela
+   (com atraso); o espectador gira/aproxima; parado 20 s, volta ao padrao. */
+const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 60, 260);
+const P = {giro: -Math.PI/4, incl: Math.PI/3, tam: 1.9, alvo: new THREE.Vector3(0, 0.8, 0)};
+const ALVO = {giro: -Math.PI/4, incl: Math.PI/3, tam: 1.9};          // pra onde a camera volta
+const SEGUE = new THREE.Vector3(0, 0.8, 0);                          // onde ela esta (alvo do alvo)
+let mexeuEm = 0, modo = "cena";
+const css = new CSS3DRenderer({element: document.getElementById("css3d")});
+const cenaCss = new THREE.Scene();
+function encaixar(){
+  const w = c.clientWidth || 1, h = c.clientHeight || 1;
+  if (c.width !== Math.floor(w * ren.getPixelRatio()) || c.height !== Math.floor(h * ren.getPixelRatio())){ ren.setSize(w, h, false); css.setSize(w, h); }
+  const a = w / h;
+  cam.left = -P.tam * a; cam.right = P.tam * a; cam.top = P.tam; cam.bottom = -P.tam;
+  cam.updateProjectionMatrix();
+}
+function posicionar(){
+  const R = 160, sp = Math.sin(P.incl), cp = Math.cos(P.incl), alvo = P.alvo;
+  cam.position.set(alvo.x + R*sp*Math.sin(P.giro), alvo.y + R*cp, alvo.z + R*sp*Math.cos(P.giro));
+  cam.lookAt(alvo);
+  sol.target.position.copy(alvo); sol.position.set(alvo.x + 3.5, alvo.y + 7, alvo.z + 2.5);
+}
+/* orbita: mouse e toque */
+(function(){
+  let arr = null, dist0 = 0, tam0 = 0;
+  const pega = function(e){ return e.touches ? {x: e.touches[0].clientX, y: e.touches[0].clientY, n: e.touches.length, e2: e.touches[1]} : {x: e.clientX, y: e.clientY, n: 1}; };
+  const inicio = function(e){ const p = pega(e); arr = {x: p.x, y: p.y}; if (p.n === 2){ dist0 = Math.hypot(p.e2.clientX - p.x, p.e2.clientY - p.y); tam0 = P.tam; } mexeuEm = performance.now(); };
+  const move = function(e){
+    if (!arr) return; const p = pega(e); mexeuEm = performance.now();
+    if (p.n === 2){ const d = Math.hypot(p.e2.clientX - p.x, p.e2.clientY - p.y); P.tam = Math.max(0.35, Math.min(6, tam0 * dist0 / Math.max(1, d))); encaixar(); return; }
+    const dx = p.x - arr.x, dy = p.y - arr.y; arr = {x: p.x, y: p.y};
+    P.giro -= dx * 0.006; P.incl = Math.max(0.15, Math.min(1.45, P.incl + dy * 0.004));
+    if (e.cancelable) e.preventDefault();
+  };
+  const fim = function(){ arr = null; };
+  c.addEventListener("mousedown", inicio); window.addEventListener("mousemove", move); window.addEventListener("mouseup", fim);
+  c.addEventListener("touchstart", inicio, {passive: true}); c.addEventListener("touchmove", move, {passive: false}); window.addEventListener("touchend", fim);
+  c.addEventListener("wheel", function(e){ P.tam = Math.max(0.35, Math.min(6, P.tam * (e.deltaY > 0 ? 1.08 : 0.92))); encaixar(); mexeuEm = performance.now(); e.preventDefault(); }, {passive: false});
+})();
+window.enquadrar = function(q){
+  modo = q; mexeuEm = 0;
+  if (q === "rosto"){ ALVO.tam = 0.45; ALVO.incl = 1.25; }
+  else { modo = "cena"; padraoDaEstacao(); }
+};
+/* enquadramento padrao por estacao: 3/4, de frente pra ela */
+function padraoDaEstacao(){
+  const Y = window.YUNA; const nome = Y ? Y.estacao : null;
+  ALVO.tam = 1.9; ALVO.incl = Math.PI/3;
+  const E = Y && Y.pronto ? Y.estacoes() : null;
+  if (E && nome && E[nome]){
+    const g = E[nome].giro;                                  // giro de chegada da estacao
+    if (nome === "mesa"){ ALVO.giro = g + 0.8; }             // g = de costas pra mesa: a camera fica atras dela, por cima do ombro
+    else if (nome === "sofa"){ ALVO.giro = g + 1.3; ALVO.incl = 0.95; }   // do lado, mais alto: a TV nao tapa
+    else if (nome === "cama"){ ALVO.giro = g + Math.PI/2 + 0.4; ALVO.incl = 0.95; }
+    else ALVO.giro = g + 0.6;                                // de frente, em 3/4
+  } else ALVO.giro = -Math.PI/4;
+}
+function animarCamera(dt){
+  const Y = window.YUNA;
+  if (Y && Y.pronto){ SEGUE.set(Y.quadris.x, (modo === "rosto" ? 1.35 : 0.8) * (Y.escala || 1), Y.quadris.z); if (modo === "rosto"){ const h = new THREE.Vector3(); const o = Y.obj; if (o){ const hb = window.vrm && window.vrm.humanoid.getNormalizedBoneNode("head"); if (hb) hb.getWorldPosition(SEGUE); } } }
+  const k = 1 - Math.pow(0.001, dt);                         // ~1 s pra chegar
+  P.alvo.lerp(SEGUE, k * 0.6);
+  const parado = performance.now() - mexeuEm > 20000;
+  if (parado){
+    const dif = function(a, b){ let d = a - b; while (d > Math.PI) d -= 2*Math.PI; while (d < -Math.PI) d += 2*Math.PI; return d; };
+    P.giro += dif(ALVO.giro, P.giro) * k * 0.5; P.incl += (ALVO.incl - P.incl) * k * 0.5;
+    const t0 = P.tam; P.tam += (ALVO.tam - P.tam) * k * 0.5; if (Math.abs(P.tam - t0) > 1e-4) encaixar();
+  }
+  posicionar();
+}
+
+/* ------------------------------------------------ moveis: a estacao da Lain */
+const malha = new THREE.Object3D(); cena.add(malha);
+const MAPA = (function(){ const cel = 0.005, n = 5200; const linha = "P".repeat(n); const linhas = new Array(n); for (let i = 0; i < n; i++) linhas[i] = linha; return {x0: -14, z0: -8, nx: n, nz: n, cel: cel, pisoY: PISO_Y, linhas: linhas}; })();
+const postos = [];
+let MIRA = {x: 0, z: 2.8};
+async function colocarMoveis(){
+  const est = await montarEstacao(THREE, GLTFLoader, cena, {pisoY: PISO_Y, base: window.BASE_3D, v: VERSAO.slice(2), anisotropia: 8});
+  window.TELAS = montarTelas(THREE); est.ligarTelas(window.TELAS);
+  window.ESTACAO_LAIN = est;
+  window.CABOSD = montarCabosDesenhados(THREE, cena, {superficies: function(){ return est.selecionaveis(); }}); window.CABOSD.carregar(est.cfg.cabos || []);
+  est.postos().forEach(function(p){ postos.push(p); });
+  const mesa = postos.find(function(p){ return p.arquivo === "26-mesa-lain"; });
+  if (mesa){ const b = new THREE.Box3().setFromObject(mesa.obj); const m = b.getCenter(new THREE.Vector3()); MIRA = {x: m.x, z: m.z}; }
+}
+const MOVEIS_PRONTOS = colocarMoveis().catch(function(e){ console.error("estacao falhou:", e); carga.textContent = "the room did not load: " + e.message; });
+
+/* ----------------------------------------------------------------- VRM */
+let vrm = null;
+const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
+loader.register(function(parser){ return new VRMLoaderPlugin(parser); });
+loader.load(window.BASE_3D + "/yuna/yuna.vrm?" + VERSAO, function(gltf){
+  vrm = gltf.userData.vrm;
+  VRMUtils.removeUnnecessaryVertices(gltf.scene);
+  VRMUtils.combineSkeletons(gltf.scene);
+  if (vrm.meta && vrm.meta.metaVersion === "0") VRMUtils.rotateVRM0(vrm);
+  vrm.scene.traverse(function(o){ if (o.isMesh || o.isSkinnedMesh){ o.castShadow = true; o.receiveShadow = false; o.frustumCulled = false; const ms = Array.isArray(o.material) ? o.material : [o.material]; ms.forEach(function(m){ if (m && m.map) m.map.anisotropy = ren.capabilities.getMaxAnisotropy(); }); } });
+  vrm.scene.position.set(0, PISO_Y, 0);
+  cena.add(vrm.scene);
+  if (vrm.lookAt) vrm.lookAt.target = cam;
+  window.vrm = vrm;
+  presilhas();
+  carregarClipesMeshy(vrm, window.BASE_3D + "/yuna/yuna-rig.glb?" + VERSAO, function(x){ if (x.total) carga.textContent = "loading her moves " + Math.round(100 * x.loaded / x.total) + "%"; }).then(async function(r){
+    await MOVEIS_PRONTOS;
+    window.YUNA = criarYuna({THREE: THREE, cena: cena, vrm: vrm, clips: r.clips, malha: malha, MAPA: MAPA, postos: postos, PISO_Y: PISO_Y, centro: {x: MIRA.x - 1.2, z: MIRA.z - 1.6}, olharPadrao: cam});
+    await YUNA.iniciar();
+    carga.style.display = "none";
+    padraoDaEstacao(); P.giro = ALVO.giro;
+    ligarMotor();
+  }).catch(function(e){ carga.textContent = "her moves did not load: " + e; console.error(e); });
+}, function(x){ if (x.total) carga.textContent = "loading Yuna " + Math.round(100 * x.loaded / x.total) + "%"; }, function(e){ carga.textContent = "Yuna did not load: " + e; console.error(e); });
+
+/* PRESILHAS (mesmos numeros do editor) */
+const PRESILHA = {x: -0.058, y: 0.128, z: 0.118, giroY: -0.55, giroZ: -0.4, sep: 0.011, comp: 0.024, cor: 0xf28ab8};
+function presilhas(){
+  const cabeca = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Head); if (!cabeca) return;
+  const R = PRESILHA, g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({color: R.cor, roughness: 0.45, metalness: 0.0, emissive: new THREE.Color(R.cor).multiplyScalar(0.22)});
+  const claro = new THREE.MeshStandardMaterial({color: 0xffd6ea, roughness: 0.4, emissive: new THREE.Color(0xffd6ea).multiplyScalar(0.25)});
+  for (let i = 0; i < 2; i++){
+    const barra = new THREE.Mesh(new THREE.CapsuleGeometry(0.0028, R.comp, 4, 10).rotateZ(Math.PI/2), mat); barra.position.set(0, -i * R.sep, 0); barra.castShadow = true; g.add(barra);
+    const conta = new THREE.Mesh(new THREE.SphereGeometry(0.0045, 12, 10), i === 0 ? claro : mat); conta.position.set(-R.comp * 0.42, -i * R.sep, 0.002); g.add(conta);
+  }
+  g.position.set(R.x, R.y, R.z); g.rotation.set(0, R.giroY, R.giroZ); cabeca.add(g);
+}
+
+/* -------------------------------------------------------------- MOTOR */
+/* O estado do motor dela manda: resting -> cama; cena.movel sofa/cama; senao
+   mesa (e o PC dela). cenaFala vira balao. Sem motor (3 falhas seguidas), ela
+   passeia sozinha: fica um tempo em cada estacao. */
+const MOTOR = {ligado: false, falhas: 0, ultimoAlvo: null, ultimaFala: 0, proximoPasseio: performance.now() + 60000};   // o primeiro passeio espera a chegada inicial terminar
+const ESTACOES_PASSEIO = ["mesa", "sofa", "mesa", "halter", "mesa", "pikachu", "cama"];
+function estacaoDoEstado(j){
+  const s = j && j.state; if (!s) return null;
+  const ag = s.agents; const a = ag && (ag.yuna || ag[Object.keys(ag)[0]]); if (!a) return null;
+  if (s.resting) return "cama";
+  const m = a.cena && a.cena.movel;
+  if (m === "sofa") return "sofa";
+  if (m === "cama") return "cama";
+  return "mesa";
+}
+async function ouvirMotor(){
+  const Y = window.YUNA; if (!Y || !Y.pronto) return;
+  let j = null;
+  try { const r = await fetch("/api/state", {cache: "no-store"}); j = await r.json(); } catch (e){ j = null; }
+  const temMotor = j && j.running && j.state;
+  if (!temMotor){
+    if (MOTOR.ligado && ++MOTOR.falhas >= 3){ MOTOR.ligado = false; try { navegadorNaTela(null, false); } catch (e){} }
+    if (!MOTOR.ligado) passear();
+    return;
+  }
+  MOTOR.falhas = 0; MOTOR.ligado = true;
+  const alvo = estacaoDoEstado(j);
+  if (alvo && alvo !== MOTOR.ultimoAlvo && alvo !== Y.estacao && Y.estacoes()[alvo]){ MOTOR.ultimoAlvo = alvo; Y.irPara(alvo, function(){ padraoDaEstacao(); }); }
+  const ag = j.state.agents; const a = ag && (ag.yuna || ag[Object.keys(ag)[0]]);
+  if (a && a.cenaFala && a.cenaFala.texto && a.cenaFala.t !== MOTOR.ultimaFala){ MOTOR.ultimaFala = a.cenaFala.t; falar(a.cenaFala.texto); }
+  const faz = document.getElementById("faz");
+  const naMesa = Y.estacao === "mesa" && Y.estado === "na estacao";
+  const liveUrl = a && (typeof a.liveView === "string" ? a.liveView : (a.liveView && (a.liveView.url || a.liveView.liveUrl))) || null;
+  try { navegadorNaTela(liveUrl, naMesa); } catch (e){ console.warn("navegador:", e); }
+  if (a && a.bancadaTela && naMesa) bancadaNasTelas(a.bancadaTela);
+  if (liveUrl && naMesa) faz.textContent = "browsing"; else if (a && a.bancadaTela && naMesa) faz.textContent = "coding: " + (a.bancadaTela.arquivo || ""); else faz.textContent = "";
+}
+function passear(){
+  const Y = window.YUNA; const agora = performance.now();
+  if (agora < MOTOR.proximoPasseio) return;
+  MOTOR.proximoPasseio = agora + 60000 + Math.random() * 90000;
+  const E = Y.estacoes(); const opcoes = ESTACOES_PASSEIO.filter(function(n){ return E[n] && n !== Y.estacao; });
+  if (opcoes.length) Y.irPara(opcoes[Math.floor(Math.random() * opcoes.length)], function(){ padraoDaEstacao(); });
+}
+function ligarMotor(){ ouvirMotor(); setInterval(ouvirMotor, 2500); }
+
+/* ------------------------------------------------------- O NAVEGADOR DELA */
+/* O motor traz `liveView` (a URL ao vivo do Browserbase). Quando ela esta no PC
+   e tem sessao, o painel abre e o monitor do meio mostra a MESMA sessao (um
+   iframe em CSS3D colado no vidro do CRT). Reconecta a cada abertura: a URL
+   ganha um `_r=` novo, senao um iframe congelado em "connection closed" fica
+   assim pra sempre (licao da tela antiga). Quando ela sai do PC, fecha. */
+const NAV = {url: null, aberto: false, objeto: null, quadro: document.getElementById("navegador-quadro"), caixa: document.getElementById("navegador"), monitorEl: null, pai: null};
+function monitorPrincipal(){
+  /* a tela mais perto do ponto que ela olha na mesa (o monitor da frente) */
+  if (!window.TELAS || !window.YUNA) return null;
+  const E = YUNA.estacoes(); const olhar = E.mesa && E.mesa.olhar; if (!olhar) return null;
+  let melhor = null, md = 1e9; const v = new THREE.Vector3();
+  window.TELAS.lista().forEach(function(t){ if (!t.malha) return; t.malha.getWorldPosition(v); const d = v.distanceTo(olhar); if (d < md){ md = d; melhor = t; } });
+  return melhor;
+}
+function navegadorNaTela(liveUrl, naMesa){
+  const querAbrir = !!liveUrl && naMesa;
+  const querReabrir = querAbrir && (NAV.url !== liveUrl || !NAV.aberto);
+  if (querReabrir){
+    NAV.url = liveUrl;
+    const fresco = liveUrl + (liveUrl.includes("?") ? "&" : "?") + "_r=" + Date.now();
+    NAV.quadro.src = fresco;
+    document.getElementById("navegador-url").textContent = "yuna is browsing";
+    /* espelho no monitor: iframe em CSS3D no vidro do CRT da frente */
+    const t = monitorPrincipal();
+    if (t){
+      if (!NAV.objeto){
+        const el = document.createElement("iframe"); el.width = 640; el.height = 480; el.setAttribute("sandbox", "allow-scripts allow-same-origin"); el.setAttribute("referrerpolicy", "no-referrer");
+        NAV.monitorEl = el; NAV.objeto = new CSS3DObject(el); cenaCss.add(NAV.objeto);
+      }
+      NAV.monitorEl.src = fresco;
+      const m = t.malha; m.updateWorldMatrix(true, false);
+      const pos = new THREE.Vector3(), q = new THREE.Quaternion(), esc = new THREE.Vector3(); m.matrixWorld.decompose(pos, q, esc);
+      const largM = m.geometry.parameters.width * esc.x, altM = m.geometry.parameters.height * esc.y;
+      const k = Math.min(largM / 640, altM / 480);
+      NAV.objeto.position.copy(pos).add(new THREE.Vector3(0, 0, 1).applyQuaternion(q).multiplyScalar(0.003));
+      NAV.objeto.quaternion.copy(q); NAV.objeto.scale.set(k, k, k);
+      NAV.pai = t.pai;
+    }
+  }
+  if (querAbrir === NAV.aberto) return;
+  NAV.aberto = querAbrir;
+  NAV.caixa.classList.toggle("aberto", querAbrir);
+  if (!querAbrir){
+    NAV.quadro.src = "about:blank";
+    if (NAV.objeto){ cenaCss.remove(NAV.objeto); NAV.objeto = null; NAV.monitorEl = null; }
+    NAV.url = null;
+  }
+}
+window.navegadorNaTela = navegadorNaTela;
+/* o CODIGO dela (bancada) vai pros outros monitores como texto de terminal */
+let bancadaVista = 0;
+function bancadaNasTelas(b){
+  if (!window.TELAS) return;
+  const principal = NAV.aberto ? NAV.pai : null;
+  if (!b || !b.quando || b.quando === bancadaVista) return;
+  bancadaVista = b.quando;
+  const bruto = String(b.codigo || b.saida || ""); const linhas = [];
+  bruto.split("\n").forEach(function(l){ while (l.length > 40){ linhas.push(l.slice(0, 40)); l = l.slice(40); } linhas.push(l); });
+  const cab = (b.arquivo ? "$ " + (b.codigo ? "vim " : "run ") + b.arquivo : "$ run") ; linhas.unshift(cab);
+  window.TELAS.lista().forEach(function(t){ if (t.pai !== principal) window.TELAS.texto(t.pai, linhas); });
+}
+
+/* balao de fala sobre a cabeca dela */
+const balao = document.getElementById("balao"); let balaoAte = 0;
+function falar(texto){ balao.textContent = texto; balao.style.opacity = "1"; balaoAte = performance.now() + Math.min(14000, 3000 + texto.length * 60); }
+const _cab = new THREE.Vector3();
+function posicionarBalao(){
+  if (performance.now() > balaoAte){ balao.style.opacity = "0"; return; }
+  const hb = vrm && vrm.humanoid.getNormalizedBoneNode("head"); if (!hb) return;
+  hb.getWorldPosition(_cab); _cab.y += 0.22; _cab.project(cam);
+  const w = c.clientWidth, h = c.clientHeight;
+  balao.style.left = ((_cab.x + 1) / 2 * w) + "px"; balao.style.top = ((1 - _cab.y) / 2 * h - 8) + "px";
+}
+
+/* ---------------------------------------------------------------- laco */
+window.relogio = new THREE.Clock();
+window.quadro = function(dt){
+  if (window.TELAS) window.TELAS.animar(dt);
+  if (window.YUNA && YUNA.pronto) YUNA.atualizar(dt);
+  else if (vrm) vrm.update(dt);
+  animarCamera(dt);
+};
+function laco(){
+  requestAnimationFrame(laco);
+  encaixar();
+  const dt = Math.min(0.1, window.relogio.getDelta());
+  window.quadro(dt);
+  ren.render(cena, cam);
+  if (NAV.objeto) css.render(cenaCss, cam);
+  posicionarBalao();
+}
+window.addEventListener("resize", encaixar);
+/* pro harness de conferencia (mesmos nomes do editor) */
+window.ren = ren; window.cam = cam; window.cena = cena; window.css = css; window.cenaCss = cenaCss; window.NAV = NAV; window.c = c; window.P = P; window.ALVO = ALVO; window.encaixar = encaixar; window.posicionar = posicionar; window.padraoDaEstacao = padraoDaEstacao;
+encaixar(); posicionar(); laco();
+
+/* ---------------------------------------------------------------- topo */
+fetch("/api/token", {cache: "no-store"}).then(function(r){ return r.json(); }).then(function(t){
+  if (t.ca){ const el = document.getElementById("ca"); el.style.display = "block"; document.getElementById("ca-txt").textContent = t.ca; el.onclick = function(){ navigator.clipboard.writeText(t.ca); el.style.background = "#dff5e3"; setTimeout(function(){ el.style.background = "#fff"; }, 600); }; }
+  if (t.x){ const a = document.getElementById("link-x"); a.href = t.x; a.style.display = "inline"; }
+}).catch(function(){});
+
+/* ---------------------------------------------------------------- chat */
+/* nome livre (guardado no navegador), fila por sondagem a cada 2 s, o que ela
+   fala entra como mensagem dela (o servidor espelha). */
+const msgs = document.getElementById("msgs"), nome = document.getElementById("nome"), texto = document.getElementById("texto"), aviso = document.getElementById("aviso"), bt = document.getElementById("btEnviar");
+let desde = 0, vistos = {};
+try { nome.value = localStorage.getItem("yuna.nome") || ""; } catch (e){}
+function hora(t){ const d = new Date(t); return d.getHours().toString().padStart(2, "0") + ":" + d.getMinutes().toString().padStart(2, "0"); }
+function mostrar(m){
+  if (vistos[m.id]) return; vistos[m.id] = true;
+  const div = document.createElement("div"); div.className = "m" + (m.dela ? " dela" : "");
+  const n = document.createElement("span"); n.className = "n"; n.textContent = m.dela ? "Yuna" : m.nome;
+  const tx = document.createElement("span"); tx.textContent = m.texto;
+  const h = document.createElement("span"); h.className = "h"; h.textContent = hora(m.t);
+  div.appendChild(n); div.appendChild(tx); div.appendChild(h);
+  const noFim = msgs.scrollTop + msgs.clientHeight >= msgs.scrollHeight - 30;
+  msgs.appendChild(div); while (msgs.children.length > 200) msgs.removeChild(msgs.firstChild);
+  if (noFim) msgs.scrollTop = msgs.scrollHeight;
+  if (m.dela && MOTOR.ligado === false) falar(m.texto);
+}
+async function puxarChat(){
+  try {
+    const r = await fetch("/api/chat?desde=" + desde, {cache: "no-store"}); const j = await r.json();
+    (j.itens || []).forEach(function(m){ mostrar(m); if (m.id > desde) desde = m.id; });
+    if (j.publico != null) document.getElementById("publico").textContent = j.publico + " watching";
+  } catch (e){}
+}
+document.getElementById("envio").addEventListener("submit", async function(e){
+  e.preventDefault();
+  const n = nome.value.trim(), t = texto.value.trim(); aviso.textContent = "";
+  if (n.length < 2){ aviso.textContent = "pick a name (2 to 20 letters)"; nome.focus(); return; }
+  if (!t){ texto.focus(); return; }
+  try { localStorage.setItem("yuna.nome", n); } catch (x){}
+  bt.disabled = true;
+  try {
+    const r = await fetch("/api/chat", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({nome: n, texto: t})});
+    const j = await r.json();
+    if (!r.ok){ aviso.textContent = j.erro || "could not send"; } else { texto.value = ""; puxarChat(); }
+  } catch (x){ aviso.textContent = "could not send"; }
+  bt.disabled = false; texto.focus();
+});
+puxarChat(); setInterval(puxarChat, 2000);
+</script>
+</body>
+</html>

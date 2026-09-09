@@ -21,6 +21,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
+import { criarChat } from "./lib/chat-site.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -48,6 +49,14 @@ const ESTADO = process.env.STATE_FILE || path.join(ROOT, "src", "data", "state-y
 let filho = null;
 let ultimoEstado = null;
 let log = [];
+
+/* O CHAT DO SITE (nome livre). O motor le o rabo do jsonl. */
+const CHAT = criarChat(path.join(ROOT, "src", "data", "chat.jsonl"));
+/* versao dos arquivos 3D: muda quando publicar-3d.py roda -> o navegador nao guarda copia velha */
+function versao3d() {
+  try { return String(Math.floor(fs.statSync(path.join(ROOT, "public", "3d", "manifesto.json")).mtimeMs / 1000)); } catch { return "1"; }
+}
+function ipDe(req) { return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "?").split(",")[0].trim(); }
 
 function anotar(txt) {
   for (const linha of String(txt).split("\n")) {
@@ -104,7 +113,65 @@ const servidor = http.createServer(async (req, res) => {
   /* O SITE. Primeira coisa que quem chega pelo dominio ve: a sala embutida,
      quem ela e, e as obras. A live continua crua em `/live` — e o que o OBS
      captura, e mexer nessa rota derrubaria a transmissao. */
-  if (url.pathname === "/" || url.pathname === "/site") {
+  /* A LIVE 3D (palco.html): a raiz, /live e /site. Cada visitante renderiza o
+     quarto dela no proprio navegador; o chat mora na mesma pagina. O site
+     antigo (loja, pedidos, versoes) saiu do ar a pedido do Michel (09/09/2026),
+     mas o arquivo continua em /antigo. */
+  if (url.pathname === "/" || url.pathname === "/site" || url.pathname === "/live") {
+    const arq = path.join(ROOT, "public", "palco.html");
+    if (!fs.existsSync(arq)) return enviar(res, 404, { erro: "a live nao foi montada" });
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate",
+    });
+    return res.end(fs.readFileSync(arq, "utf8").replace('window.VERSAO_3D || "1"', JSON.stringify(versao3d())));
+  }
+  /* os modulos do palco (tela/*.js), sem cache: sao os mesmos do editor local */
+  if (url.pathname.startsWith("/tela/") && url.pathname.endsWith(".js")) {
+    const arq = path.join(ROOT, "tela", path.basename(url.pathname));
+    if (!fs.existsSync(arq)) return enviar(res, 404, { erro: "modulo nao existe" });
+    res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" });
+    return res.end(fs.readFileSync(arq));
+  }
+  /* O CHAT: GET puxa (desde=id) e conta o publico; POST publica. O que ela
+     fala no motor (cenaFala) e espelhado aqui como mensagem dela. */
+  if (url.pathname === "/api/chat" && req.method === "GET") {
+    if (!url.searchParams.get("motor")) CHAT.viu(ipDe(req));   // o motor sondando nao e plateia
+    try {
+      const st = ultimoEstado || (filho ? null : JSON.parse(fs.readFileSync(ESTADO, "utf8")));
+      const ag = st && st.agents; const a = ag && (ag.yuna || ag[Object.keys(ag)[0]]);
+      if (filho && a && a.cenaFala && a.cenaFala.texto) CHAT.dela(a.cenaFala.texto, a.cenaFala.t);
+    } catch { /* sem estado */ }
+    return enviar(res, 200, { itens: CHAT.recentes(url.searchParams.get("desde")), publico: CHAT.publico(), agora: Date.now() });
+  }
+  if (url.pathname === "/api/chat" && req.method === "POST") {
+    let corpo = "";
+    for await (const p of req) { corpo += p; if (corpo.length > 4000) break; }
+    let d = {};
+    try { d = JSON.parse(corpo || "{}"); } catch { return enviar(res, 400, { erro: "bad request" }); }
+    /* a fala DELA (o motor respondendo ao publico): so com o token do dono */
+    if (d.dela) {
+      const tok = req.headers["x-admin-token"];
+      if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN) return enviar(res, 401, { erro: "token invalido" });
+      const m = CHAT.dela(d.texto, d.falaT || null);
+      return enviar(res, 200, m ? { ok: true, id: m.id } : { ok: false, erro: "empty or repeated" });
+    }
+    const r = CHAT.publicar({ nome: d.nome, texto: d.texto, ip: ipDe(req) });
+    if (r.erro) return enviar(res, 400, r);
+    return enviar(res, 200, { ok: true, id: r.id });
+  }
+  /* SO NA MAQUINA (localhost): o harness de conferencia grava capturas do palco em quarto/casa */
+  if (url.pathname === "/dev/png" && req.method === "POST" && /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(String(req.socket.remoteAddress))) {
+    let corpo = "";
+    for await (const p of req) { corpo += p; if (corpo.length > 30e6) break; }
+    try {
+      const d = JSON.parse(corpo || "{}");
+      const nome = path.basename(String(d.nome || "captura.png")).replace(/[^a-zA-Z0-9_.-]/g, "");
+      fs.writeFileSync(path.join(ROOT, "quarto", "casa", nome), Buffer.from(String(d.png || "").split(",").pop(), "base64"));
+      return enviar(res, 200, { ok: true, nome });
+    } catch (e) { return enviar(res, 400, { erro: String(e.message) }); }
+  }
+  if (url.pathname === "/antigo") {
     const arq = path.join(ROOT, "public", "site.html");
     if (!fs.existsSync(arq)) return enviar(res, 404, { erro: "o site nao foi montado" });
     res.writeHead(200, {
@@ -235,13 +302,14 @@ const servidor = http.createServer(async (req, res) => {
     } catch { /* sem estado ainda */ }
     return enviar(res, 200, {
       mint: process.env.LIVE_CHAT_MINT || null,
+      ca: process.env.PONS_CA || null,             // o token dela na Pons (Robinhood Chain)
       x: process.env.X_URL || null,
       carteira,
     });
   }
 
   // A TELA. E o que o OBS captura e o que o site embute num iframe.
-  if (url.pathname === "/live") {
+  if (url.pathname === "/live2d") {
     if (!fs.existsSync(TELA)) return enviar(res, 404, { erro: "a tela ainda nao foi gerada" });
     /* NUNCA CACHEAR. A tela tem 3 MB e o navegador guardava a versao antiga:
        eu corrigia, mandava recarregar, e ele via exatamente a mesma coisa. */
@@ -294,6 +362,19 @@ const servidor = http.createServer(async (req, res) => {
     }
   }
 
+  /* ESPELHO DO MOTOR QUE ESTA NO AR (so pra testar a pagina na maquina):
+     ESTADO_REMOTO=https://yuna.cam faz este servidor, sem motor proprio, servir
+     o /api/state de la (cache de 3 s). A pagina local mostra onde ela esta e o
+     navegador dela de verdade. */
+  if (url.pathname === "/api/state" && !filho && process.env.ESTADO_REMOTO) {
+    try {
+      if (!global.__remoto || Date.now() - global.__remoto.t > 3000) {
+        const r = await fetch(process.env.ESTADO_REMOTO.replace(/\/+$/, "") + "/api/state", { headers: { "cache-control": "no-store" } });
+        global.__remoto = { t: Date.now(), corpo: await r.json() };
+      }
+      return enviar(res, 200, Object.assign({ remoto: true }, global.__remoto.corpo));
+    } catch (e) { return enviar(res, 200, { running: false, state: null, remoto: true, erro: String(e.message).slice(0, 80) }); }
+  }
   if (url.pathname === "/api/state") {
     /* O QUE VEIO DE CASA VENCE, enquanto for recente. Dois minutos de validade:
        se a maquina de casa cair, o site nao pode ficar mostrando para sempre um

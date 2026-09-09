@@ -27,3 +27,10 @@ backups/
 # A sessao do X dela, na maquina do Michel. Nunca no git.
 scripts/x-cookies-local.json
 scripts/x-perfil/
+
+# a fila do chat do site e estado vivo (volume no Railway), nao codigo
+src/data/*.jsonl
+!src/data/archive.jsonl
+# fontes 3D brutas (2 GB) e logs locais
+quarto/3d/
+logs/
