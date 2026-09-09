@@ -33,7 +33,7 @@
   #publico { color: #666; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
   #publico::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e24; margin-right: 6px; vertical-align: 0; }
   #palco { position: fixed; top: 42px; left: 0; right: 340px; bottom: 0; background: #fff; }
-  #c { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  #c { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; position: relative; z-index: 1; }
   #c:active { cursor: grabbing; }
   #balao { position: absolute; max-width: 320px; padding: 8px 12px; background: #fff; border: 1px solid #333; border-radius: 12px; font-size: 14px; line-height: 1.35; color: #222;
            transform: translate(-50%, -100%); pointer-events: none; opacity: 0; transition: opacity .25s; box-shadow: 0 2px 0 #333; }
@@ -44,7 +44,9 @@
   #faz { position: absolute; left: 12px; top: 10px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: #666; background: rgba(255,255,255,.85); padding: 4px 8px; border: 1px solid #ddd; max-width: 60%; }
   /* o navegador dela: painel grande embaixo a esquerda (abre quando ela senta no
      PC e esta navegando) e um espelho no monitor 3D (camada CSS3D por cima do canvas) */
-  #css3d { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  /* fica DEBAIXO do canvas: o canvas e transparente e o vidro do monitor e um buraco
+     (so profundidade), entao o que esta na frente do monitor cobre o iframe */
+  #css3d { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
   #css3d iframe { pointer-events: none; border: 0; background: #0b0f1a; }
   #navegador { position: absolute; left: 12px; bottom: 52px; width: 46%; max-width: 760px; aspect-ratio: 16 / 10; background: #0b0f1a; border: 1px solid #333; box-shadow: 0 3px 0 #333;
                display: flex; flex-direction: column; opacity: 0; transform: translateX(-2%); transition: opacity .3s, transform .3s; pointer-events: none; }
@@ -128,14 +130,15 @@ const carga = document.getElementById("carga");
 
 /* ------------------------------------------------------------ renderer */
 const c = document.getElementById("c");
-const ren = new THREE.WebGLRenderer({canvas: c, antialias: true});
+const ren = new THREE.WebGLRenderer({canvas: c, antialias: true, alpha: true});
+ren.setClearColor(0xffffff, 0);   // transparente: o branco vem do #palco; o buraco do monitor mostra a camada de baixo
 ren.outputColorSpace = THREE.SRGBColorSpace;
 ren.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
 ren.toneMapping = THREE.NoToneMapping;
 ren.shadowMap.enabled = true; ren.shadowMap.type = THREE.PCFSoftShadowMap;
 const cena = new THREE.Scene();
 const pmrem = new THREE.PMREMGenerator(ren); cena.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; cena.environmentIntensity = 0.55;
-cena.background = new THREE.Color(0xffffff);
+cena.background = null;   // (era branco opaco; agora o #palco pinta o branco)
 
 /* ---------------------------------------------------------------- chao */
 const PISO_Y = 0;
@@ -346,7 +349,13 @@ function ligarMotor(){ ouvirMotor(); setInterval(ouvirMotor, 2500); }
    iframe em CSS3D colado no vidro do CRT). Reconecta a cada abertura: a URL
    ganha um `_r=` novo, senao um iframe congelado em "connection closed" fica
    assim pra sempre (licao da tela antiga). Quando ela sai do PC, fecha. */
-const NAV = {url: null, aberto: false, objeto: null, quadro: document.getElementById("navegador-quadro"), caixa: document.getElementById("navegador"), monitorEl: null, pai: null};
+const NAV = {url: null, aberto: false, objeto: null, quadro: document.getElementById("navegador-quadro"), caixa: document.getElementById("navegador"), monitorEl: null, pai: null, vidro: null, matVidro: null};
+const MAT_BURACO = new THREE.MeshBasicMaterial({colorWrite: false});   // so profundidade: a camada CSS aparece por dentro
+/* renderOrder -10: o buraco desenha ANTES de tudo (so profundidade). A ordem normal e
+   por centro do objeto, e o corpo do CRT (centro mais perto da camera) pintava a face
+   branca da tela antes do buraco chegar -- e o buraco ficava branco. */
+function vidroBuraco(malha){ if (NAV.vidro === malha) return; vidroSolido(); if (!malha) return; NAV.vidro = malha; NAV.matVidro = malha.material; NAV.ordemVidro = malha.renderOrder; malha.material = MAT_BURACO; malha.renderOrder = -10; }
+function vidroSolido(){ if (NAV.vidro && NAV.matVidro){ NAV.vidro.material = NAV.matVidro; NAV.vidro.renderOrder = NAV.ordemVidro || 0; } NAV.vidro = null; NAV.matVidro = null; }
 function monitorPrincipal(){
   /* a tela mais perto do ponto que ela olha na mesa (o monitor da frente) */
   if (!window.TELAS || !window.YUNA) return null;
@@ -374,10 +383,13 @@ function navegadorNaTela(liveUrl, naMesa){
       const m = t.malha; m.updateWorldMatrix(true, false);
       const pos = new THREE.Vector3(), q = new THREE.Quaternion(), esc = new THREE.Vector3(); m.matrixWorld.decompose(pos, q, esc);
       const largM = m.geometry.parameters.width * esc.x, altM = m.geometry.parameters.height * esc.y;
-      const k = Math.min(largM / 640, altM / 480);
+      /* o iframe tem a PROPORCAO do vidro (senao sobra borda no buraco) */
+      NAV.monitorEl.width = 640; NAV.monitorEl.height = Math.max(1, Math.round(640 * altM / largM));
+      const k = largM / 640;
       NAV.objeto.position.copy(pos).add(new THREE.Vector3(0, 0, 1).applyQuaternion(q).multiplyScalar(0.003));
       NAV.objeto.quaternion.copy(q); NAV.objeto.scale.set(k, k, k);
       NAV.pai = t.pai;
+      vidroBuraco(m);
     }
   }
   if (querAbrir === NAV.aberto) return;
@@ -386,6 +398,7 @@ function navegadorNaTela(liveUrl, naMesa){
   if (!querAbrir){
     NAV.quadro.src = "about:blank";
     if (NAV.objeto){ cenaCss.remove(NAV.objeto); NAV.objeto = null; NAV.monitorEl = null; }
+    vidroSolido();
     NAV.url = null;
   }
 }
