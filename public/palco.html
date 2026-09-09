@@ -33,7 +33,7 @@
   #publico { color: #666; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
   #publico::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e24; margin-right: 6px; vertical-align: 0; }
   #palco { position: fixed; top: 42px; left: 0; right: 340px; bottom: 0; background: #fff; }
-  #c { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; position: relative; z-index: 1; }
+  #c { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
   #c:active { cursor: grabbing; }
   #balao { position: absolute; max-width: 320px; padding: 8px 12px; background: #fff; border: 1px solid #333; border-radius: 12px; font-size: 14px; line-height: 1.35; color: #222;
            transform: translate(-50%, -100%); pointer-events: none; opacity: 0; transition: opacity .25s; box-shadow: 0 2px 0 #333; }
@@ -46,7 +46,7 @@
      PC e esta navegando) e um espelho no monitor 3D (camada CSS3D por cima do canvas) */
   /* fica DEBAIXO do canvas: o canvas e transparente e o vidro do monitor e um buraco
      (so profundidade), entao o que esta na frente do monitor cobre o iframe */
-  #css3d { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+  #css3d { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: -1; }   /* z negativo: atras do canvas e na frente do fundo do #palco; o canvas NAO ganha z-index (senao tampa o painel, o balao e os botoes) */
   #css3d iframe { pointer-events: none; border: 0; background: #0b0f1a; }
   #navegador { position: absolute; left: 12px; bottom: 52px; width: 46%; max-width: 760px; aspect-ratio: 16 / 10; background: #0b0f1a; border: 1px solid #333; box-shadow: 0 3px 0 #333;
                display: flex; flex-direction: column; opacity: 0; transform: translateX(-2%); transition: opacity .3s, transform .3s; pointer-events: none; }
@@ -131,7 +131,7 @@ const carga = document.getElementById("carga");
 /* ------------------------------------------------------------ renderer */
 const c = document.getElementById("c");
 const ren = new THREE.WebGLRenderer({canvas: c, antialias: true, alpha: true});
-ren.setClearColor(0xffffff, 0);   // transparente: o branco vem do #palco; o buraco do monitor mostra a camada de baixo
+ren.setClearColor(0x000000, 0);   // transparente DE VERDADE: com alfa pre-multiplicado, branco+alfa 0 vira branco opaco na tela (o buraco ficava branco); preto+0 e o transparente valido
 ren.outputColorSpace = THREE.SRGBColorSpace;
 ren.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
 ren.toneMapping = THREE.NoToneMapping;
