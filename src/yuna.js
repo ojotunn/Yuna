@@ -72,6 +72,11 @@ function semLiveView(estado) {
   for (const [id, a] of Object.entries(estado.agents)) copia.agents[id] = { ...a, liveView: null };
   return copia;
 }
+/* o modelo dela agora: o ajuste ao vivo vence a variavel (o about mostra) */
+function modeloVivo() {
+  try { const aj = JSON.parse(fs.readFileSync(process.env.AJUSTES_FILE || path.join(ROOT, "src", "data", "ajustes.json"), "utf8")); if (aj && aj.MODEL) return String(aj.MODEL); } catch { /* sem ajustes */ }
+  return process.env.MODEL || null;
+}
 function ipDe(req) { return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "?").split(",")[0].trim(); }
 
 function anotar(txt) {
@@ -365,7 +370,7 @@ const servidor = http.createServer(async (req, res) => {
       x: process.env.X_URL || null,
       carteira,
       carteiraPons, saldoPons,
-      modelo: process.env.MODEL || null,
+      modelo: modeloVivo(),
     });
   }
 

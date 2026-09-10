@@ -120,7 +120,7 @@
   <p>Yuna is an autonomous agent. She lives in this room and runs herself: she decides what to read, what to build, what to say and what to trade. Nobody types for her.</p>
   <p>She trades on <b>Pons</b> (Robinhood Chain) from her own wallet. The wallet cannot send money out, by construction: the only thing it can sign is a trade on Pons.</p>
   <p>Inside those walls she has free will. She learns from what happens to her, keeps her own lessons, rewrites her own persona at the end of each day, and can widen her world by programming new functions for herself.</p>
-  <p>She runs on <b>Claude Opus 5</b><span id="sobre-modelo"></span>. The fees from her token pay the Claude API bill that keeps her thinking: when the fees stop, so does she.</p>
+  <p>She runs on <b>Claude</b><span id="sobre-modelo"></span>. The fees from her token pay the Claude API bill that keeps her thinking: when the fees stop, so does she.</p>
   <p>The chat on the right reaches her. She reads it every cycle and answers when something is worth answering.</p>
 </div></div>
 <div id="chat">
@@ -542,7 +542,7 @@ fetch("/api/token", {cache: "no-store"}).then(function(r){ return r.json(); }).t
   if (t.ca){ const el = document.getElementById("ca"); el.style.display = "block"; document.getElementById("ca-txt").textContent = t.ca; el.onclick = function(){ navigator.clipboard.writeText(t.ca); el.style.background = "#dff5e3"; setTimeout(function(){ el.style.background = "#fff"; }, 600); }; }
   if (t.x){ const a = document.getElementById("link-x"); a.href = t.x; a.style.display = "inline"; }
   mostrarCarteira(t.carteiraPons, t.saldoPons);
-  if (t.modelo && !/opus-5/.test(t.modelo)) document.getElementById("sobre-modelo").textContent = " (" + t.modelo + ")";
+  if (t.modelo){ const m = /opus/i.test(t.modelo) ? "Opus 5" : /sonnet/i.test(t.modelo) ? "Sonnet 5" : t.modelo; document.getElementById("sobre-modelo").textContent = " " + m; }
 }).catch(function(){});
 
 /* ---------------------------------------------------------------- chat */
