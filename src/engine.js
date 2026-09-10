@@ -1738,7 +1738,7 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
       (agent.saldoPons != null ? `, holding ${Number(agent.saldoPons).toFixed(4)} ETH.` : "."));
     L.push("The house funds it. It has no way to send money out — by construction, not by rule; the only");
     L.push("thing it can ever sign is a trade on Pons. House rules: your own token you may buy, up to");
-    L.push(`${REGRAS_PONS.tokenProprioMaxPct}% of the wallet per buy, and you never sell it; any other token, at most ${REGRAS_PONS.tradeMaxPct}% of the wallet`);
+    L.push(`${REGRAS_PONS.tokenProprioMaxPct}% of everything you have IN TOTAL (not per buy), and you never sell it; any other token, at most ${REGRAS_PONS.tradeMaxPct}% of the wallet`);
     L.push("per trade. Only tokens still on the Pons curve can be traded from here.");
     const minhasPons = (state.positions || []).filter((p) => p.agent === agent.id && p.venue === "pons");
     if (minhasPons.length) {
@@ -2122,7 +2122,7 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
     L.push('  propose          — a trade on Pons, executed RIGHT AWAY (no proposal step): `venue` "pons",');
     L.push('                     `market` = the token contract (0x…), `side` "buy" or "sell", `sizeUsd` = the amount');
     L.push('                     in ETH (the field keeps its old name; here it means ETH). `thesis`: why, in your words.');
-    L.push(`                     Your own token: buy only, at most ${REGRAS_PONS.tokenProprioMaxPct}% of the wallet per buy, never sold.`);
+    L.push(`                     Your own token: buy only, at most ${REGRAS_PONS.tokenProprioMaxPct}% of everything you have in total, never sold.`);
     L.push(`                     Any other token: at most ${REGRAS_PONS.tradeMaxPct}% of the wallet per trade; "sell" sells all you hold of it.`);
     L.push('                     Only tokens still on the Pons curve. Real ETH leaves your wallet and anyone can audit it.');
     L.push('  close            — `positionId`: sells that Pons position (never your own token).');
@@ -2719,7 +2719,16 @@ async function operarNaPons(agent, action) {
   const saldo = await carteiraPons.saldo();
   if (saldo == null) return emit("denied", agent.id, "could not read the wallet balance (RPC) — try next turn");
   const pct = proprio ? REGRAS_PONS.tokenProprioMaxPct : REGRAS_PONS.tradeMaxPct;
-  const teto = Math.max(0, Math.min(saldo * pct / 100, saldo - REGRAS_PONS.reservaGasEth));
+  let teto = Math.max(0, Math.min(saldo * pct / 100, saldo - REGRAS_PONS.reservaGasEth));
+  if (proprio) {
+    /* TETO ACUMULADO no token dela (10/09/2026): "20% por compra" deixou ela
+       repetir a compra ate zerar o ETH da noite pro dia. Agora o total posto no
+       proprio token fica em no maximo 20% do que ela tem (ETH + o que ja pos). */
+    const jaPos = (state.positions || []).filter((p) => p.venue === "pons" && p.agent === agent.id && mesmoCa(p.market, market)).reduce((t, p) => t + (Number(p.ethIn) || 0), 0);
+    const tetoAcumulado = Math.max(0, (saldo + jaPos) * pct / 100 - jaPos);
+    teto = Math.min(teto, tetoAcumulado);
+    if (eth > teto + 1e-9) { agent.stats.denials++; return emit("denied", agent.id, `your own token already holds ${jaPos.toFixed(4)} ETH of what you have; the cap is ${pct}% of the whole wallet in total, so at most ${teto.toFixed(4)} ETH more right now`); }
+  }
   if (eth > teto + 1e-9) {
     agent.stats.denials++;
     return emit("denied", agent.id, `${eth.toFixed(4)} ETH is over the cap: ${proprio ? "your own token takes at most" : "any token takes at most"} ${pct}% of the wallet (${teto.toFixed(4)} ETH right now, gas reserved)`);
