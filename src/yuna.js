@@ -190,7 +190,8 @@ const servidor = http.createServer(async (req, res) => {
   if (url.pathname === "/api/shot") {
     const arq = path.join(ROOT, "src", "data", "shot-yuna.jpg");
     if (!fs.existsSync(arq)) return enviar(res, 404, { erro: "sem captura" });
-    res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "no-store" });
+    const idade = Math.round((Date.now() - fs.statSync(arq).mtimeMs) / 1000);
+    res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "no-store", "x-shot-age": String(idade) });
     return res.end(fs.readFileSync(arq));
   }
   /* LIMPAR O CHAT (dia do lancamento). So com o token do dono. */

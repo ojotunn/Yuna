@@ -369,12 +369,11 @@ async function ouvirMotor(){
      interativo e nao sai mais do servidor. A imagem muda quando ela le/navega. */
   /* so mostra a captura enquanto e RECENTE (10 min): depois disso ela nao esta mais
      "navegando", esta conversando ou escrevendo, e o monitor volta ao terminal */
-  const fresca = a && a.lastRead && a.lastRead.shot && (Date.now() - a.lastRead.shot) < 60 * 1000;   // com a captura continua (4 s), 1 min sem foto = nao esta no PC
-  const liveUrl = fresca ? "/api/shot?t=" + a.lastRead.shot : null;
-  try { const alvo = fresca && a.lastRead.target ? new URL(a.lastRead.target).hostname.replace(/^www\./, "") : ""; document.getElementById("navegador-url").textContent = alvo ? "yuna is browsing " + alvo : "yuna is browsing"; } catch (e){}
-  try { navegadorNaTela(liveUrl, naMesa); } catch (e){ console.warn("navegador:", e); }
+  /* a captura ao vivo vem por outro relogio (vigiarCaptura, a cada 4 s); aqui so o titulo */
+  try { const alvo = a && a.lastRead && a.lastRead.target ? new URL(a.lastRead.target).hostname.replace(/^www\./, "") : ""; document.getElementById("navegador-url").textContent = alvo ? "yuna is browsing " + alvo : "yuna is browsing"; } catch (e){}
+  MOTOR.naMesa = naMesa;
   if (a && a.bancadaTela && naMesa) bancadaNasTelas(a.bancadaTela);
-  if (liveUrl && naMesa) faz.textContent = "browsing"; else if (a && a.bancadaTela && naMesa) faz.textContent = "coding: " + (a.bancadaTela.arquivo || ""); else faz.textContent = "";
+  if (NAV.aberto) faz.textContent = "browsing"; else if (a && a.bancadaTela && naMesa) faz.textContent = "coding: " + (a.bancadaTela.arquivo || ""); else faz.textContent = "";
 }
 function passear(){
   const Y = window.YUNA; const agora = performance.now();
@@ -383,7 +382,21 @@ function passear(){
   const E = Y.estacoes(); const opcoes = ESTACOES_PASSEIO.filter(function(n){ return E[n] && n !== Y.estacao; });
   if (opcoes.length) Y.irPara(opcoes[Math.floor(Math.random() * opcoes.length)], function(){ padraoDaEstacao(); });
 }
-function ligarMotor(){ ouvirMotor(); setInterval(ouvirMotor, 2500); }
+function ligarMotor(){ ouvirMotor(); setInterval(ouvirMotor, 2500); setInterval(vigiarCaptura, 4000); }
+/* A CAPTURA AO VIVO: a cada 4 s busca /api/shot; se a foto tem menos de 60 s e ela
+   esta no PC, mostra (painel + monitor). Imagem, nunca sessao. */
+let capturaUrl = null;
+async function vigiarCaptura(){
+  if (!MOTOR.ligado || !MOTOR.naMesa){ if (NAV.aberto) navegadorNaTela(null, false); return; }
+  try {
+    const r = await fetch("/api/shot", {cache: "no-store"}); if (!r.ok){ navegadorNaTela(null, false); return; }
+    const idade = Number(r.headers.get("x-shot-age") || 999);
+    if (idade > 60){ navegadorNaTela(null, false); return; }
+    const b = await r.blob(); const u = URL.createObjectURL(b);
+    navegadorNaTela(u, true);
+    if (capturaUrl) URL.revokeObjectURL(capturaUrl); capturaUrl = u;
+  } catch (e){ /* proxima volta */ }
+}
 
 /* ------------------------------------------------------- O NAVEGADOR DELA */
 /* O motor traz `liveView` (a URL ao vivo do Browserbase). Quando ela esta no PC
