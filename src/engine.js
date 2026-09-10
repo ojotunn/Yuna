@@ -2770,6 +2770,23 @@ async function cicloDaPons() {
       emit("did", ela.id, `cheered — her token is up ${varia10min.toFixed(0)}% in ten minutes`);
     }
   }
+  /* A COMPRA DE LANCAMENTO: no primeiro ciclo em que o CA existe e ela ainda nao
+     tem o proprio token, a casa compra por ela (PONS_COMPRA_INICIAL_PCT do saldo,
+     padrao 10%, dentro do teto de 20%). Ela pode comprar mais depois; vender nunca. */
+  if (ela && pons && cfg.ponsCa && ehCa(cfg.ponsCa) && !state.compraInicialFeita) {
+    const jaTem = (state.positions || []).some((p) => p.venue === "pons" && mesmoCa(p.market, cfg.ponsCa));
+    if (jaTem) state.compraInicialFeita = true;
+    else {
+      const pct = Math.min(REGRAS_PONS.tokenProprioMaxPct, Number(process.env.PONS_COMPRA_INICIAL_PCT || 10));
+      const saldo = await carteiraPons.saldo();
+      const eth = saldo != null ? Math.max(0, Math.min(saldo * pct / 100, saldo - REGRAS_PONS.reservaGasEth)) : 0;
+      if (eth > 0.0001) {
+        const antes = state.positions.length;
+        await operarNaPons(ela, { market: cfg.ponsCa, side: "buy", sizeUsd: Number(eth.toFixed(6)), thesis: "launch day: the dev holds her own coin" });
+        if (state.positions.length > antes) { state.compraInicialFeita = true; emit("system", null, `— launch: she bought her own token with ${pct}% of the wallet —`); }
+      }
+    }
+  }
   /* O TESTE REAL, uma vez por processo: compra e vende de volta */
   if (cfg.ponsTeste && !ponsTesteFeito) {
     ponsTesteFeito = true;
