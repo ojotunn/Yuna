@@ -80,8 +80,18 @@ if (!await estaLogada(page)) {
     console.log("   copie os valores de `auth_token` e `ct0`)");
     process.exit(1);
   }
-  const c = JSON.parse(fs.readFileSync(ARQ, "utf8"));
-  if (!c.auth_token || !c.ct0) { console.log("  o arquivo de cookies esta vazio: " + ARQ); process.exit(1); }
+  if (!await plantarSessao(page)) process.exit(1);
+}
+/* PLANTA A SESSAO a partir do arquivo de cookies. Serve na abertura e TAMBEM no
+   meio da vigilia: se o X derrubar a sessao, replanta sozinho em vez de parar
+   (Michel, 10/09: "toda hora vou ter que ficar colocando os cookies de novo?").
+   O arquivo fica no disco (git ignora); so precisa de cookies novos se o X
+   invalidar o auth_token de verdade. */
+async function plantarSessao(page) {
+  const ARQ = path.join(AQUI, "x-cookies-local.json");
+  let c = {};
+  try { c = JSON.parse(fs.readFileSync(ARQ, "utf8")); } catch { /* sem arquivo */ }
+  if (!c.auth_token || !c.ct0) { console.log("  o arquivo de cookies esta vazio: " + ARQ); return false; }
   const comuns = { domain: ".x.com", path: "/", secure: true, sameSite: "Lax" };
   await page.setCookie(
     { name: "auth_token", value: c.auth_token, ...comuns, httpOnly: true },
@@ -89,8 +99,9 @@ if (!await estaLogada(page)) {
   );
   await page.goto("https://x.com/home", { waitUntil: "domcontentloaded", timeout: 60000 });
   await new Promise((r) => setTimeout(r, 5000));
-  if (!await estaLogada(page)) { console.log("  a sessao nao pegou — os cookies podem ter expirado."); process.exit(1); }
+  if (!await estaLogada(page)) { console.log("  a sessao nao pegou — os cookies do arquivo expiraram; copie de novo (PLANTAR-COOKIES-X.bat)."); return false; }
   console.log("  sessao plantada — o perfil guarda daqui pra frente.");
+  return true;
 }
 console.log("  logada no X. Vigiando a fila dela a cada " + (INTERVALO / 1000) + "s.");
 if (!PUBLICAR) console.log("  MODO ENSAIO: escreve o post e NAO clica em publicar.");
@@ -110,8 +121,16 @@ let presoHa = 0;
    conversa da pessoa em vez de postar solto. */
 const linkDe = new Map();
 
+let deslogadaHa = 0;
 for (;;) {
   try {
+    /* DESLOGOU NO MEIO? Replanta do arquivo e segue, sem parar a vigilia. */
+    if (!await estaLogada(page)) {
+      deslogadaHa++;
+      console.log(`  a sessao caiu (${deslogadaHa}x). Replantando do arquivo de cookies...`);
+      if (!await plantarSessao(page)) { await new Promise((r) => setTimeout(r, INTERVALO)); continue; }
+      deslogadaHa = 0;
+    }
     /* O MOTIVO IMPORTA, E A REPETICAO NAO. A funcao devolve QUAL foi o sinal
        e o worker jogava fora, imprimindo vinte linhas iguais — que nao dizem
        se e captcha, se deslogou, ou se o detector esta enganado (que foi o
