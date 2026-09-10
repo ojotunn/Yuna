@@ -98,6 +98,11 @@ if (!PUBLICAR) console.log("  MODO ENSAIO: escreve o post e NAO clica em publica
 /* Mencoes ja entregues ao motor. Sem isto, cada leitura reenviaria as mesmas
    e ela veria a mesma pergunta cinco vezes. */
 const jaVistas = new Set();
+/* A PRIMEIRA LEITURA SO MARCA: as mencoes que ja estavam na pagina quando o
+   programa abriu sao velhas (cada reinicio reentregava as mesmas 8 ao motor, e
+   ela relia "Dead?" da era anterior como se fosse novo). So o que chegar
+   DEPOIS de abrir e entregue. X_LOCAL_ENTREGAR_ANTIGAS=1 desliga isto. */
+let primeiraLeitura = process.env.X_LOCAL_ENTREGAR_ANTIGAS !== "1";
 let proximaLeitura = 0;
 /* Quantos ciclos seguidos o X barrou. Zera quando volta a passar. */
 let presoHa = 0;
@@ -130,6 +135,12 @@ for (;;) {
       const r = await lerMencoes(page, { limite: 8 }).catch(() => null);
       if (r?.ok) {
         const novas = (r.mencoes || []).filter((m) => m.link && !jaVistas.has(m.link));
+        if (primeiraLeitura) {
+          primeiraLeitura = false;
+          for (const m of novas) { jaVistas.add(m.link); if (m.autor) linkDe.set(String(m.autor).replace(/^@/, "").toLowerCase(), m.link); }
+          console.log("  " + novas.length + " mencao(oes) antigas ignoradas; so as novas a partir de agora.");
+          novas.length = 0;
+        }
         for (const m of novas) {
           jaVistas.add(m.link);
           if (m.autor) linkDe.set(String(m.autor).replace(/^@/, "").toLowerCase(), m.link);
