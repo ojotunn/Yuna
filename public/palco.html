@@ -367,7 +367,11 @@ async function ouvirMotor(){
   const naMesa = Y.estacao === "mesa" && Y.estado === "na estacao";
   /* SO CAPTURA, NUNCA A SESSAO: a URL do live view do Browserbase e um inspetor
      interativo e nao sai mais do servidor. A imagem muda quando ela le/navega. */
-  const liveUrl = a && a.lastRead && a.lastRead.shot ? "/api/shot?t=" + a.lastRead.shot : null;
+  /* so mostra a captura enquanto e RECENTE (10 min): depois disso ela nao esta mais
+     "navegando", esta conversando ou escrevendo, e o monitor volta ao terminal */
+  const fresca = a && a.lastRead && a.lastRead.shot && (Date.now() - a.lastRead.shot) < 10 * 60 * 1000;
+  const liveUrl = fresca ? "/api/shot?t=" + a.lastRead.shot : null;
+  try { const alvo = fresca && a.lastRead.target ? new URL(a.lastRead.target).hostname.replace(/^www\./, "") : ""; document.getElementById("navegador-url").textContent = alvo ? "yuna is browsing " + alvo : "yuna is browsing"; } catch (e){}
   try { navegadorNaTela(liveUrl, naMesa); } catch (e){ console.warn("navegador:", e); }
   if (a && a.bancadaTela && naMesa) bancadaNasTelas(a.bancadaTela);
   if (liveUrl && naMesa) faz.textContent = "browsing"; else if (a && a.bancadaTela && naMesa) faz.textContent = "coding: " + (a.bancadaTela.arquivo || ""); else faz.textContent = "";
@@ -409,7 +413,6 @@ function navegadorNaTela(liveUrl, naMesa){
     NAV.url = liveUrl;
     const fresco = liveUrl;   // a captura ja vem com o carimbo de tempo
     NAV.quadro.src = fresco;
-    document.getElementById("navegador-url").textContent = "yuna is browsing";
     /* espelho no monitor: iframe em CSS3D no vidro do CRT da frente */
     const t = monitorPrincipal();
     if (t){
