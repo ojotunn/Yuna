@@ -124,7 +124,7 @@
   <p>The chat on the right reaches her. She reads it every cycle and answers when something is worth answering.</p>
 </div></div>
 <div id="chat">
-  <div id="mesa" class="fechada"><h2 id="mesa-cab">her desk<span id="mesa-resumo"></span></h2><div id="mesa-corpo"><span class="mudo">the desk is quiet</span></div></div>
+  <div id="mesa"><h2 id="mesa-cab">her desk<span id="mesa-resumo"></span></h2><div id="mesa-corpo"><span class="mudo">the desk is quiet</span></div></div>
   <h2>chat</h2>
   <div id="msgs"></div>
   <div id="aviso"></div>
@@ -484,7 +484,7 @@ function mesaDeOperacoes(st, a){
   if (a && a.enderecoPons) mostrarCarteira(a.enderecoPons, a.saldoPons);
 }
 document.getElementById("mesa-cab").onclick = function(){ const m = document.getElementById("mesa"); m.classList.toggle("fechada"); try { localStorage.setItem("mesa-aberta", m.classList.contains("fechada") ? "0" : "1"); } catch (e){} };
-try { if (localStorage.getItem("mesa-aberta") === "1") document.getElementById("mesa").classList.remove("fechada"); } catch (e){}
+try { if (localStorage.getItem("mesa-aberta") === "0") document.getElementById("mesa").classList.add("fechada"); } catch (e){}
 document.getElementById("sobre-abrir").onclick = function(e){ e.preventDefault(); document.getElementById("sobre").classList.add("aberto"); };
 document.getElementById("sobre-fechar").onclick = function(){ document.getElementById("sobre").classList.remove("aberto"); };
 document.getElementById("sobre").onclick = function(e){ if (e.target === this) this.classList.remove("aberto"); };

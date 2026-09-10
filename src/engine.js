@@ -2175,7 +2175,8 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
     L.push('  execute          — proposalId, once the rebuttal window has closed.');
     L.push('  close            — positionId + reason. Add sizeUsd to sell only PART of it (take some');
     L.push('                     off, let the rest run); leave sizeUsd empty to close the whole position.');
-  } else {
+  } else if (!(cfg.venue === "pons" && agent.enderecoPons && pons)) {
+    /* na Pons a mesa esta aberta (o menu dela vem abaixo); esta linha e da pump */
     L.push('  (trading is OFF this session — no propose/execute. Put your edge into research,');
     L.push('   the services, and the room instead.)');
   }
