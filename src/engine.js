@@ -163,7 +163,18 @@ const cfg = {
   siteChat: process.env.SITE_CHAT !== "0",
   /* O TOKEN DELA NA PONS (Robinhood Chain). Vazio ate o Michel lancar. */
   ponsCa: (process.env.PONS_CA || "").trim(),
+  /* A PRACA. "pons" (Robinhood Chain) e o padrao desde 09/09/2026 (Michel: "pode
+     remover o que for especifico da pump fun, porque vamos lancar na pons"). O que
+     e da pump.fun -- a sala, os callouts, a bussola do explore, o trade spot --
+     so liga com VENUE=pump. Ajustavel ao vivo. */
+  venue: (process.env.VENUE || "pons").trim().toLowerCase(),
 };
+/* fora da pump, as chaves da pump nao valem, venham do ambiente ou dos ajustes */
+function aplicarPraca() {
+  if (cfg.venue === "pump") return;
+  cfg.liveChatMint = ""; cfg.roomPostEnabled = false; cfg.tradingEnabled = false;
+}
+aplicarPraca();
 const site = criarChatDoSite({
   base: (process.env.SITE_URL || `http://127.0.0.1:${process.env.PORT || 8433}`).replace(/\/$/, ""),
   token: process.env.ADMIN_TOKEN || "",
@@ -226,7 +237,7 @@ export const AJUSTAVEIS = [
      sozinho. Com isto, marcar o token no dia do lancamento deixa de exigir
      restart — que e o que congela a tela de quem esta assistindo. */
   "LIVE_CHAT_MINT", "ROOM_POST_ENABLED", "DRAW_ENABLED",
-  "SITE_CHAT", "PONS_CA",
+  "SITE_CHAT", "PONS_CA", "VENUE",
 ];
 
 function reloadLiveConfig() {
@@ -328,6 +339,8 @@ function reloadLiveConfig() {
   cfg.roomMaxChars = n("ROOM_MAX_CHARS", cfg.roomMaxChars);
   cfg.siteChat = b("SITE_CHAT", cfg.siteChat);
   cfg.ponsCa = s("PONS_CA", cfg.ponsCa);
+  cfg.venue = s("VENUE", cfg.venue).toLowerCase();
+  aplicarPraca();   // depois de tudo: fora da pump, a sala e o trade spot ficam desligados
   /* A ESCALA, ao vivo. Trocar o modelo por faixa de hora e a alavanca de custo
      mais forte e a que mais mexe no que ela SOA — entao tem que dar pra
      desligar no segundo em que soar errado, sem restart. Vazio volta pro
@@ -833,7 +846,9 @@ const SEM_ENCOMENDA =
    O premio e proporcional a alta, com teto, e SO paga o que subiu. O que cai
    nao cobra nada alem do proprio dolar perdido — a punicao e o acerto do dia
    seguinte valer menos, porque a lista de calls dela e publica e nao se apaga. */
-const CALLOUTS = process.env.CALLOUTS_ENABLED !== "0";
+const CALLOUTS_ENV = process.env.CALLOUTS_ENABLED !== "0";
+/* callout e coisa da pump.fun (paga em token, exige holding): so na praca pump */
+const calloutsLigados = () => CALLOUTS_ENV && cfg.venue === "pump";
 const other = (id) => {
   if (SOZINHA) return null;
   const i = ORDER.indexOf(id);
@@ -1779,7 +1794,7 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
          a call existir no placar, entao a ordem morre ao ser cumprida. */
       const jaChamou = (state.callouts ?? []).some(
         (c) => c.mint === cfg.liveChatMint && c.agent === agent.id);
-      if (CALLOUTS && !jaChamou) {
+      if (calloutsLigados() && !jaChamou) {
         L.push("");
         L.push("AND PUT YOUR NAME ON IT ONCE, with `callout` — market = the mint above,");
         L.push("`thesis` = what you are actually building here. The house decided this too, and");
@@ -2003,7 +2018,7 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
   }
 
 
-  if (CALLOUTS) {
+  if (calloutsLigados()) {
     const meus = state.callouts.filter((c) => c.agent === agent.id);
     const abertos = meus.filter((c) => c.aberto);
     if (abertos.length) {
@@ -2034,22 +2049,26 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
   L.push('                     the door. The results page stays OPEN in your tab — `browse` with');
   L.push('                     "click: <result title>" opens it, or `research` the URL directly.');
   L.push('                     The page is where the edge lives; skimming titles is not reading.');
-  L.push('  research         — `query`: a URL, "hl:COIN" for candles, or "pump:MINT" for a token sheet.');
-  /* A BUSSOLA, DITA COM TODAS AS LETRAS.
-     Eu liguei o explore e nao contei a ela: ficou meia hora lendo macro e
-     batendo no board da pump porque nao sabia que existia uma porta. Ferramenta
-     que o agente nao sabe que tem e ferramenta que nao existe. */
-  L.push('                     "pump:explore" opens the compass on pump.fun and lists what is running');
-  L.push('                     right now — symbol, market cap, age and MINT. "pump:live" opens the');
-  L.push('                     livestreams instead: coins somebody is on camera talking about this');
-  L.push('                     minute. Two different doors to the same board, and they show different');
-  L.push('                     coins. That is where a mint address comes from: look, pick one, then');
-  L.push('                     "pump:<that mint>" for the sheet.');
+  if (cfg.venue === "pump") {
+    L.push('  research         — `query`: a URL, "hl:COIN" for candles, or "pump:MINT" for a token sheet.');
+    /* A BUSSOLA, DITA COM TODAS AS LETRAS.
+       Eu liguei o explore e nao contei a ela: ficou meia hora lendo macro e
+       batendo no board da pump porque nao sabia que existia uma porta. Ferramenta
+       que o agente nao sabe que tem e ferramenta que nao existe. */
+    L.push('                     "pump:explore" opens the compass on pump.fun and lists what is running');
+    L.push('                     right now — symbol, market cap, age and MINT. "pump:live" opens the');
+    L.push('                     livestreams instead: coins somebody is on camera talking about this');
+    L.push('                     minute. Two different doors to the same board, and they show different');
+    L.push('                     coins. That is where a mint address comes from: look, pick one, then');
+    L.push('                     "pump:<that mint>" for the sheet.');
+  } else {
+    L.push('  research         — `query`: a URL, or "hl:COIN" for candles.');
+  }
   L.push('                     A URL opens in YOUR browser tab and stays open. You see one screen at a time.');
   L.push('  browse           — `query`: "scroll down" | "scroll up" | "click: <link text>" | "back".');
   L.push('                     Continue on the page already open in your tab, like a person at a browser.');
   L.push('                     Sites often open with a welcome dialog or a cookie banner sitting on top of');
-  L.push('                     everything — pump.fun does. Nothing works until it is dismissed, so click');
+  L.push('                     everything — many sites do. Nothing works until it is dismissed, so click');
   L.push('                     through it ("click: Continue", "click: Reject all") the way anyone would,');
   L.push('                     then carry on. Do not burn turns reading a page you are locked out of.');
   if (foe)
@@ -2111,7 +2130,7 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
     L.push('  (trading is OFF this session — no propose/execute. Put your edge into research,');
     L.push('   the services, and the room instead.)');
   }
-  if (CALLOUTS) {
+  if (calloutsLigados()) {
     const porHora = num("CALLOUTS_PER_HOUR", 5);
     const naUltimaHora = state.callouts.filter(
       (c) => c.agent === agent.id && Date.now() - (c.t || 0) < 3600000).length;
@@ -3161,7 +3180,7 @@ async function apply(agent, action) {
     }
 
     case "callout": {
-      if (!CALLOUTS) return emit("note", agent.id, "there is no call board here");
+      if (!calloutsLigados()) return emit("note", agent.id, "there is no call board here");
       /* CADENCIA: MEDIDA, NAO LIDA.
          A pump anunciou "call a coin once every 6 hours" e eu implementei isso.
          O Michel foi la e fez QUATRO calls em CINCO MINUTOS — o anuncio nao e o
@@ -5358,7 +5377,7 @@ async function runWorld() {
   // ECOS: confere ate 3 moedas por rodada, as menos checadas primeiro. Nao e
   // custo de modelo, e custo de rede — mas o ciclo ja e limitado pelo
   // navegador, entao nao da pra checar a lista inteira toda vez.
-  const alvos = [...state.watch]
+  const alvos = (cfg.venue === "pump" ? [...state.watch] : [])
     .sort((x, y) => (x.checkedAt ?? 0) - (y.checkedAt ?? 0))
     .slice(0, 3);
   const mcapNow = {};
@@ -5882,7 +5901,8 @@ if (isMain) {
   }
   if (cfg.siteChat && site.ligado) log(`Chat do site ligado: ${site.base}/api/chat`);
   else log("!! CHAT DO SITE DESLIGADO (SITE_CHAT=0 ou sem ADMIN_TOKEN) — ela nao le nem responde a pagina.");
-  if (!String(process.env.LIVE_CHAT_MINT || "").trim()) {
+  log(`Praca: ${cfg.venue}` + (cfg.venue === "pump" ? "" : " — pump.fun desligada (sala, callouts, bussola, trade spot)"));
+  if (cfg.venue === "pump" && !String(process.env.LIVE_CHAT_MINT || "").trim()) {
     log("!! SEM LIVE_CHAT_MINT — ela nao le o chat da live e o que ela 'fala com");
     log("   a sala' aparece na TELA mas nao chega na pump.fun. Ninguem ve.");
   }
