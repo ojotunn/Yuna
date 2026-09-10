@@ -71,7 +71,8 @@
   #css3d iframe { pointer-events: none; border: 0; background: #0b0f1a; }
   #navegador { position: absolute; left: 12px; bottom: 52px; width: 46%; max-width: 760px; aspect-ratio: 16 / 10; background: #0b0f1a; border: 1px solid #333; box-shadow: 0 3px 0 #333;
                display: flex; flex-direction: column; opacity: 0; transform: translateX(-2%); transition: opacity .3s, transform .3s; pointer-events: none; }
-  #navegador.aberto { opacity: 1; transform: none; pointer-events: auto; }
+  #navegador.aberto { opacity: 1; transform: none; pointer-events: none; }   /* SO OLHAR: ninguem digita no navegador dela */
+  #navegador iframe { pointer-events: none !important; }
   #navegador .topo { height: 22px; background: linear-gradient(#f2f2f2, #dedede); border-bottom: 1px solid #b5b5b5; font: 11px ui-monospace, Menlo, Consolas, monospace; color: #555; padding: 3px 8px; display: flex; gap: 8px; align-items: center; }
   #navegador .topo i { width: 8px; height: 8px; border-radius: 50%; background: #e24; display: inline-block; }
   #navegador iframe { flex: 1; border: 0; width: 100%; background: #0b0f1a; }
