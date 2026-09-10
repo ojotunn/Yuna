@@ -5812,6 +5812,10 @@ let ponsTesteFeito = false;
 async function loop() {
   // A VIDA CONTINUA DE ONDE PAROU — se houver de onde.
   const retomada = loadCheckpoint();
+  /* OS AJUSTES AO VIVO VALEM JA NO BOOT. Sem isto, REST_ENABLED=0 (ajuste) so
+     entrava no primeiro turno, e cada reinicio depois da meia-noite mandava ela
+     pra cama por um minuto no meio da noite de lancamento. */
+  try { reloadLiveConfig(); } catch (e) { log(`ajustes no boot: ${e.message}`); }
   /* A CARTEIRA NASCE NO VOLUME na primeira subida (Michel, 09/09/2026: "pode
      criar a carteira dela e so mando o saldo?"). O endereco vai pro estado e
      pro site; a chave privada e a senha entram na lista de segredos redigidos. */
