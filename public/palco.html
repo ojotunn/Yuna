@@ -369,7 +369,7 @@ async function ouvirMotor(){
      interativo e nao sai mais do servidor. A imagem muda quando ela le/navega. */
   /* so mostra a captura enquanto e RECENTE (10 min): depois disso ela nao esta mais
      "navegando", esta conversando ou escrevendo, e o monitor volta ao terminal */
-  const fresca = a && a.lastRead && a.lastRead.shot && (Date.now() - a.lastRead.shot) < 10 * 60 * 1000;
+  const fresca = a && a.lastRead && a.lastRead.shot && (Date.now() - a.lastRead.shot) < 60 * 1000;   // com a captura continua (4 s), 1 min sem foto = nao esta no PC
   const liveUrl = fresca ? "/api/shot?t=" + a.lastRead.shot : null;
   try { const alvo = fresca && a.lastRead.target ? new URL(a.lastRead.target).hostname.replace(/^www\./, "") : ""; document.getElementById("navegador-url").textContent = alvo ? "yuna is browsing " + alvo : "yuna is browsing"; } catch (e){}
   try { navegadorNaTela(liveUrl, naMesa); } catch (e){ console.warn("navegador:", e); }
