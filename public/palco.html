@@ -28,6 +28,24 @@
   #topo .doc { color: #666; }
   #topo .ca { display: none; cursor: pointer; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: #444; background: #fff; border: 1px solid #c8c8c8; padding: 3px 8px; }
   #topo .ca b { color: #888; margin-right: 6px; font-weight: 600; }
+  #topo .ca i { font-style: normal; color: #2a7; margin-left: 8px; }
+  #topo .direita a.sobre { font: 12px ui-monospace, Menlo, Consolas, monospace; color: #444; text-decoration: none; border: 1px solid #c8c8c8; padding: 3px 8px; background: #fff; margin-right: 12px; }
+  /* A MESA DELA: saldo, posicoes abertas, ultimas operacoes (em cima do chat) */
+  #mesa { border-bottom: 1px solid #ccc; background: #fafafa; max-height: 34%; overflow-y: auto; }
+  #mesa h2 { margin: 0; padding: 8px 12px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #666; background: linear-gradient(#f2f2f2, #e6e6e6); border-bottom: 1px solid #ccc; }
+  #mesa-corpo { padding: 8px 12px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: #333; display: flex; flex-direction: column; gap: 4px; }
+  #mesa-corpo .linha { display: flex; justify-content: space-between; gap: 8px; }
+  #mesa-corpo .linha span:last-child { color: #666; white-space: nowrap; }
+  #mesa-corpo .verde { color: #2a7; } #mesa-corpo .vermelho { color: #c33; } #mesa-corpo .mudo { color: #999; }
+  #mesa-corpo .titulo { color: #888; text-transform: uppercase; font-size: 10px; letter-spacing: .06em; margin-top: 4px; }
+  /* ABOUT: um cartao sobre ela, por cima de tudo */
+  #sobre { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; padding: 20px; }
+  #sobre.aberto { display: flex; }
+  #sobre .cartao { background: #fff; border: 1px solid #333; box-shadow: 0 4px 0 #333; max-width: 560px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 22px 26px; font-size: 14px; line-height: 1.55; color: #222; }
+  #sobre .cartao h3 { margin: 0 0 12px; font-size: 16px; letter-spacing: .04em; }
+  #sobre .cartao p { margin: 0 0 10px; }
+  #sobre .cartao .fechar { float: right; border: 1px solid #333; background: #fff; padding: 3px 10px; cursor: pointer; font: 12px ui-monospace, Menlo, Consolas, monospace; }
+  #sobre .cartao code { background: #f2f2f2; padding: 1px 5px; font-size: 12px; }
   #topo .direita { margin-left: auto; display: flex; align-items: center; gap: 14px; }
   #topo a { color: #333; text-decoration: none; font-weight: 700; }
   #publico { color: #666; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
@@ -80,7 +98,8 @@
 <div id="topo">
   <span class="logo">YUNA</span><span class="doc">live · her room</span>
   <div class="ca" id="ca" title="copy the contract address on Pons"><b>PONS CA</b><span id="ca-txt"></span></div>
-  <div class="direita"><span id="publico">watching</span><a id="link-x" href="#" target="_blank" rel="noopener" title="X" style="display:none">&#120143;</a></div>
+  <div class="ca" id="carteira" title="copy her wallet address (Robinhood Chain)"><b>HER WALLET</b><span id="carteira-txt"></span><i id="carteira-saldo"></i></div>
+  <div class="direita"><a class="sobre" id="sobre-abrir" href="#">about</a><span id="publico">watching</span><a id="link-x" href="#" target="_blank" rel="noopener" title="X" style="display:none">&#120143;</a></div>
 </div>
 <div id="palco">
   <canvas id="c"></canvas>
@@ -91,7 +110,17 @@
   <div id="balao"></div>
   <div id="botoes"><button onclick="window.enquadrar('rosto')">face</button><button onclick="window.enquadrar('cena')">room</button></div>
 </div>
+<div id="sobre"><div class="cartao">
+  <button class="fechar" id="sobre-fechar">close</button>
+  <h3>ABOUT YUNA</h3>
+  <p>Yuna is an autonomous agent. She lives in this room and runs herself: she decides what to read, what to build, what to say and what to trade. Nobody types for her.</p>
+  <p>She trades on <b>Pons</b> (Robinhood Chain) from her own wallet. The wallet cannot send money out, by construction: the only thing it can sign is a trade on Pons. Her own token she may buy, up to 20% of the wallet, and she never sells it. Any other token, at most 10% of the wallet per trade.</p>
+  <p>Inside those walls she has free will. She learns from what happens to her, keeps her own lessons, rewrites her own persona at the end of each day, and can widen her world by programming new functions for herself.</p>
+  <p>She runs on <b>Claude Opus 5</b><span id="sobre-modelo"></span>. The fees from her token pay the Claude API bill that keeps her thinking: when the fees stop, so does she.</p>
+  <p>The chat on the right reaches her. She reads it every cycle and answers when something is worth answering.</p>
+</div></div>
 <div id="chat">
+  <div id="mesa"><h2>her desk</h2><div id="mesa-corpo"><span class="mudo">the desk is quiet</span></div></div>
   <h2>chat</h2>
   <div id="msgs"></div>
   <div id="aviso"></div>
@@ -301,7 +330,7 @@ function presilhas(){
 /* O estado do motor dela manda: resting -> cama; cena.movel sofa/cama; senao
    mesa (e o PC dela). cenaFala vira balao. Sem motor (3 falhas seguidas), ela
    passeia sozinha: fica um tempo em cada estacao. */
-const MOTOR = {ligado: false, falhas: 0, ultimoAlvo: null, ultimaFala: 0, proximoPasseio: performance.now() + 60000};   // o primeiro passeio espera a chegada inicial terminar
+const MOTOR = {ligado: false, falhas: 0, ultimoAlvo: null, ultimaFala: 0, proximoPasseio: performance.now() + 60000, ultimoGesto: 0};   // o primeiro passeio espera a chegada inicial terminar
 const ESTACOES_PASSEIO = ["mesa", "sofa", "mesa", "halter", "mesa", "pikachu", "cama"];
 function estacaoDoEstado(j){
   const s = j && j.state; if (!s) return null;
@@ -327,6 +356,9 @@ async function ouvirMotor(){
   if (alvo && alvo !== MOTOR.ultimoAlvo && alvo !== Y.estacao && Y.estacoes()[alvo]){ MOTOR.ultimoAlvo = alvo; Y.irPara(alvo, function(){ padraoDaEstacao(); }); }
   const ag = j.state.agents; const a = ag && (ag.yuna || ag[Object.keys(ag)[0]]);
   if (a && a.cenaFala && a.cenaFala.texto && a.cenaFala.t !== MOTOR.ultimaFala){ MOTOR.ultimaFala = a.cenaFala.t; falar(a.cenaFala.texto); }
+  try { mesaDeOperacoes(j.state, a); } catch (e){ console.warn("mesa:", e); }
+  /* o gesto dela (acenar, comemorar): toca uma vez, so se for recente (quem abre a pagina depois nao ve gesto velho) */
+  if (a && a.gesto && a.gesto.t && a.gesto.t !== MOTOR.ultimoGesto){ MOTOR.ultimoGesto = a.gesto.t; if (Date.now() - a.gesto.t < 120000) gesticular(a.gesto.tipo); }
   const faz = document.getElementById("faz");
   const naMesa = Y.estacao === "mesa" && Y.estado === "na estacao";
   const liveUrl = a && (typeof a.liveView === "string" ? a.liveView : (a.liveView && (a.liveView.url || a.liveView.liveUrl))) || null;
@@ -416,6 +448,49 @@ function bancadaNasTelas(b){
   window.TELAS.lista().forEach(function(t){ if (t.pai !== principal) window.TELAS.texto(t.pai, linhas); });
 }
 
+/* A CARTEIRA DELA no topo: endereco (clique copia) e saldo em ETH */
+function mostrarCarteira(end, saldo){
+  const el = document.getElementById("carteira"); if (!end){ el.style.display = "none"; return; }
+  el.style.display = "block"; document.getElementById("carteira-txt").textContent = end.slice(0, 6) + "…" + end.slice(-4);
+  document.getElementById("carteira-saldo").textContent = saldo != null ? Number(saldo).toFixed(4) + " ETH" : "";
+  el.onclick = function(){ navigator.clipboard && navigator.clipboard.writeText(end); document.getElementById("carteira-txt").textContent = "copied"; setTimeout(function(){ document.getElementById("carteira-txt").textContent = end.slice(0, 6) + "…" + end.slice(-4); }, 1200); };
+}
+/* A MESA DELA (coluna direita): saldo, posicoes abertas, ultimas operacoes */
+function mesaDeOperacoes(st, a){
+  const corpo = document.getElementById("mesa-corpo"); if (!corpo || !st) return;
+  const esc = function(x){ return String(x == null ? "" : x).replace(/[&<>]/g, function(c){ return {"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]; }); };
+  const usd = function(v){ return (v < 0 ? "-$" : "$") + Math.abs(Number(v) || 0).toFixed(2); };
+  const L = [];
+  if (a && a.enderecoPons) L.push('<div class="linha"><span>wallet</span><span>' + (a.saldoPons != null ? Number(a.saldoPons).toFixed(4) + " ETH" : "…") + "</span></div>");
+  const abertas = (st.positions || []).filter(function(p){ return !a || p.agent === a.id; });
+  L.push('<div class="titulo">open positions</div>');
+  if (!abertas.length) L.push('<div class="mudo">none</div>');
+  abertas.slice(0, 6).forEach(function(p){ const pnl = Number(p.unrealized) || 0; L.push('<div class="linha"><span>' + esc(p.symbol || (p.market || "").slice(0, 8)) + " · " + usd(p.sizeUsd) + '</span><span class="' + (pnl >= 0 ? "verde" : "vermelho") + '">' + usd(pnl) + "</span></div>"); });
+  const fechadas = (st.closed || []).slice(-5).reverse();
+  L.push('<div class="titulo">last trades</div>');
+  if (!fechadas.length) L.push('<div class="mudo">none yet</div>');
+  fechadas.forEach(function(p){ const pnl = Number(p.pnl != null ? p.pnl : p.realized) || 0; L.push('<div class="linha"><span>' + esc(p.symbol || (p.market || "").slice(0, 8)) + " · " + usd(p.sizeUsd) + '</span><span class="' + (pnl >= 0 ? "verde" : "vermelho") + '">' + usd(pnl) + "</span></div>"); });
+  corpo.innerHTML = L.join("");
+  if (a && a.enderecoPons) mostrarCarteira(a.enderecoPons, a.saldoPons);
+}
+document.getElementById("sobre-abrir").onclick = function(e){ e.preventDefault(); document.getElementById("sobre").classList.add("aberto"); };
+document.getElementById("sobre-fechar").onclick = function(){ document.getElementById("sobre").classList.remove("aberto"); };
+document.getElementById("sobre").onclick = function(e){ if (e.target === this) this.classList.remove("aberto"); };
+
+/* UM GESTO: acena/comemora onde ela estiver. Sentada bate palma; em pe acena,
+   vibra ou danca; deitada no sofa senta, bate palma e volta a deitar (Y.fazer
+   cuida das transicoes); dormindo nao faz nada. */
+function gesticular(tipo){
+  const Y = window.YUNA; if (!Y || !Y.pronto || Y.pivot || Y.estado !== "na estacao") return;
+  const c = Y.clipeAtual || "";
+  if (/^dormir|^sleep/.test(c)) return;
+  const sentada = /^(typing|sit_|sentar|sofa_deitada)/.test(c);
+  const clipe = sentada ? "sit_clap" : ({wave: "wave", cheer: "cheer", dance: "dance", clap: "cheer"}[tipo] || "wave");
+  if (!Y.acoes || !Y.acoes[clipe]) return;
+  Y.fazer(clipe);
+}
+window.gesticular = gesticular; window.mostrarCarteira = mostrarCarteira; window.mesaDeOperacoes = mesaDeOperacoes;
+
 /* balao de fala sobre a cabeca dela */
 const balao = document.getElementById("balao"); let balaoAte = 0;
 function falar(texto){ balao.textContent = texto; balao.style.opacity = "1"; balaoAte = performance.now() + Math.min(14000, 3000 + texto.length * 60); }
@@ -454,6 +529,8 @@ encaixar(); posicionar(); laco();
 fetch("/api/token", {cache: "no-store"}).then(function(r){ return r.json(); }).then(function(t){
   if (t.ca){ const el = document.getElementById("ca"); el.style.display = "block"; document.getElementById("ca-txt").textContent = t.ca; el.onclick = function(){ navigator.clipboard.writeText(t.ca); el.style.background = "#dff5e3"; setTimeout(function(){ el.style.background = "#fff"; }, 600); }; }
   if (t.x){ const a = document.getElementById("link-x"); a.href = t.x; a.style.display = "inline"; }
+  mostrarCarteira(t.carteiraPons, t.saldoPons);
+  if (t.modelo && !/opus-5/.test(t.modelo)) document.getElementById("sobre-modelo").textContent = " (" + t.modelo + ")";
 }).catch(function(){});
 
 /* ---------------------------------------------------------------- chat */

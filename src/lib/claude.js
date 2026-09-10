@@ -116,6 +116,9 @@ const ACTION_SCHEMA = {
             "research",
             "browse",
             "speak",
+            // UM GESTO pro publico (acenar, comemorar). Reusa `text` como o
+            // tipo: wave | cheer | dance | clap. Sem campo novo.
+            "gesture",
             "propose",
             "object",
             "execute",

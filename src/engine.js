@@ -26,7 +26,8 @@ import { peneirar } from "./lib/peneira.js";
 import { parseShifts, resolve as resolveShift } from "./lib/shifts.js";
 import { parseSchedule, dueMark, describe as describeSchedule } from "./lib/schedule.js";
 import * as world from "./lib/events.js";
-import { collectSecrets, assertClean, redact, SecretLeak } from "./lib/secrets.js";
+import { collectSecrets, assertClean, redact, SecretLeak, addRuntimeSecret } from "./lib/secrets.js";
+import { abrirCarteira, REGRAS as REGRAS_PONS } from "./lib/carteira-pons.js";
 import * as chat from "./lib/pumpchat.js";
 import { criarChatDoSite } from "./lib/chat-site-motor.js";
 import * as chrome from "./lib/browser.js";
@@ -1130,6 +1131,12 @@ function publish() {
           chain: a.chain ?? null,
           // Valor real no comeco do show, para o palco mostrar ▲/▼ (subiu/caiu).
           chainStartUsd: a.chainStartUsd ?? null,
+          /* A CARTEIRA DELA NA PONS: endereco (pro Michel mandar saldo e pro site
+             mostrar) e saldo em ETH. So o publico; a chave nunca sai do motor. */
+          enderecoPons: a.enderecoPons ?? null,
+          saldoPons: a.saldoPons ?? null,
+          // O ULTIMO GESTO (acenar, comemorar): o palco toca o clipe uma vez.
+          gesto: a.gesto ?? null,
         }];
       })
     ),
@@ -1721,6 +1728,15 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
      SEMPRE, fora de qualquer `if` de mensagem nova -- no lancamento anterior
      ela renegou a propria moeda no ar porque nada no mundo dela dizia que era
      dela. Fica curto: e um fato, nao um pedido de anuncio. */
+  if (agent.enderecoPons) {
+    L.push(`YOUR WALLET ON ROBINHOOD CHAIN (where Pons lives): ${agent.enderecoPons}` +
+      (agent.saldoPons != null ? `, holding ${Number(agent.saldoPons).toFixed(4)} ETH.` : "."));
+    L.push("The house funds it. It has no way to send money out — by construction, not by rule; the only");
+    L.push("thing it can ever sign is a trade on Pons. House rules for when that desk opens: your own token");
+    L.push(`you may buy, up to ${REGRAS_PONS.tokenProprioMaxPct}% of the wallet, and you never sell it; any other token, at most`);
+    L.push(`${REGRAS_PONS.tradeMaxPct}% of the wallet per trade. The desk is not wired yet — you will be told when it is.`);
+    L.push("");
+  }
   if (cfg.ponsCa) {
     L.push(`YOUR TOKEN LIVES ON PONS (Robinhood Chain): ${cfg.ponsCa}. The house launched it in`);
     L.push("your name and it is the only one; any other contract carrying your name is somebody");
@@ -2078,6 +2094,9 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
        o prompt explicava o `to: "room"` sem nunca dizer que `speak` existe, e
        a unica porta dela para o publico ficava escondida. */
     L.push('  speak            — `to`: "room", `text`: what you say to the people watching. Free.');
+  L.push('  gesture          — `text`: "wave" | "cheer" | "dance" | "clap". Free, no words needed. Wave at the');
+  L.push('                     people watching when someone says hi or something kind; cheer, clap or dance when');
+  L.push('                     your token climbs or the room earned it. A gesture every turn stops meaning anything.');
   if (cfg.liveChatMint || (cfg.siteChat && site.ligado)) {
     L.push(foe
       ? '                     `to`: "room" instead answers the people watching, out loud, by name.'
@@ -3144,6 +3163,17 @@ async function apply(agent, action) {
       return;
     }
 
+    case "gesture": {
+      /* UM GESTO PRO PUBLICO (Michel, 09/09/2026: "ela pode acenar para os
+         espectadores e fazer animacoes felizes"). Reusa `text` como o tipo:
+         wave | cheer | dance | clap. De graca e sem cena nova: acontece onde
+         ela esta. O palco 3D le `gesto` no estado e toca o clipe. */
+      const tipo = String(action.text ?? "wave").trim().toLowerCase();
+      const ok = ["wave", "cheer", "dance", "clap"].includes(tipo) ? tipo : "wave";
+      agent.gesto = { tipo: ok, t: Date.now() };
+      emit("did", agent.id, ok === "wave" ? "waved at the people watching" : ok === "clap" ? "clapped" : ok === "dance" ? "danced a little" : "cheered");
+      return;
+    }
     case "speak": {
       const text = String(action.text ?? "").trim();
       if (!text) return;
@@ -5353,6 +5383,10 @@ function pushWorld(e) {
 }
 
 async function runWorld() {
+  /* O SALDO DELA NA PONS, todo ciclo (uma leitura de RPC; falhou, fica o anterior). */
+  if (carteiraPons) {
+    try { const ela = state.agents[ORDER[0]]; const sd = await carteiraPons.saldo(); if (ela && sd != null) ela.saldoPons = sd; } catch { /* RPC fora */ }
+  }
   /* O CHAT DO SITE: o que o publico escreveu desde a ultima olhada vai pra fila
      do agente; o turno consome. Na primeira olhada so marca onde esta (nao
      reencena o historico pra ela). Nunca trava o ciclo.
@@ -5560,9 +5594,25 @@ async function recuperarCiclosPerdidos() {
   }
 }
 
+/* A CARTEIRA DELA NA PONS (Robinhood Chain). Aberta em loop(); a chave fica so
+   dentro do objeto, e o objeto so sabe assinar trade pra Pons. */
+let carteiraPons = null;
+
 async function loop() {
   // A VIDA CONTINUA DE ONDE PAROU — se houver de onde.
   const retomada = loadCheckpoint();
+  /* A CARTEIRA NASCE NO VOLUME na primeira subida (Michel, 09/09/2026: "pode
+     criar a carteira dela e so mando o saldo?"). O endereco vai pro estado e
+     pro site; a chave privada e a senha entram na lista de segredos redigidos. */
+  try {
+    carteiraPons = await abrirCarteira(DATA, { segredo: (v) => addRuntimeSecret(v, "PONS_WALLET") });
+    const ela = state.agents[ORDER[0]];
+    if (ela) ela.enderecoPons = carteiraPons.endereco;
+    log(`Carteira Pons ${carteiraPons.nasceu ? "NASCEU" : "aberta"}: ${carteiraPons.endereco}`);
+    emit("system", null, carteiraPons.nasceu
+      ? `— her wallet on ${carteiraPons.cadeia.nome} was born: ${carteiraPons.endereco}. It cannot send money out; it can only trade on Pons. —`
+      : `— her wallet on ${carteiraPons.cadeia.nome}: ${carteiraPons.endereco} —`);
+  } catch (e) { log(`carteira Pons falhou: ${e.message}`); }
   /* E o que a corrente lembra e o disco esqueceu. Dispara e nao espera: o show
      nao pode ficar preso num RPC lento pra subir. */
   recuperarCiclosPerdidos().catch(() => {});

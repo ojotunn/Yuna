@@ -300,11 +300,20 @@ const servidor = http.createServer(async (req, res) => {
       const st = filho ? ultimoEstado : JSON.parse(fs.readFileSync(ESTADO, "utf8"));
       carteira = st?.agents?.yuna?.address || null;
     } catch { /* sem estado ainda */ }
+    /* a carteira dela na Pons: endereco e saldo, direto do estado do motor */
+    let carteiraPons = null, saldoPons = null;
+    try {
+      const st = ultimoEstado || JSON.parse(fs.readFileSync(ESTADO, "utf8"));
+      const ag = st && st.agents; const a = ag && (ag.yuna || ag[Object.keys(ag)[0]]);
+      if (a) { carteiraPons = a.enderecoPons || null; saldoPons = a.saldoPons ?? null; }
+    } catch { /* sem estado ainda */ }
     return enviar(res, 200, {
       mint: process.env.LIVE_CHAT_MINT || null,
       ca: process.env.PONS_CA || null,             // o token dela na Pons (Robinhood Chain)
       x: process.env.X_URL || null,
       carteira,
+      carteiraPons, saldoPons,
+      modelo: process.env.MODEL || null,
     });
   }
 
