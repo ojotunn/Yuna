@@ -24,7 +24,13 @@ export function criarChat(arquivo) {
     if (fs.existsSync(arquivo)) {
       const linhas = fs.readFileSync(arquivo, "utf8").trim().split("\n").slice(-300);
       for (const l of linhas) {
-        try { const m = JSON.parse(l); if (m && m.id) { itens.push(m); seq = Math.max(seq, m.id); if (m.dela && m.falaT) falasVistas.add(m.falaT); } } catch { /* linha torta */ }
+        try {
+          const m = JSON.parse(l);
+          if (!m || !m.id) continue;
+          seq = Math.max(seq, m.id);
+          if (m.marca === "limpo") { itens.length = 0; continue; }   // a limpeza do lancamento: o que veio antes nao volta
+          itens.push(m); if (m.dela && m.falaT) falasVistas.add(m.falaT);
+        } catch { /* linha torta */ }
       }
     }
   } catch { /* sem historico */ }
@@ -69,6 +75,14 @@ export function criarChat(arquivo) {
     publico() {
       const agora = Date.now(); let n = 0;
       for (const [ip, t] of vistos) { if (agora - t < 40000) n++; else vistos.delete(ip); }
+      return n;
+    },
+    /* LIMPA TUDO (o dia do lancamento): a fila esvazia, o arquivo ganha uma
+       marca com o contador — os ids continuam de onde estavam, senao o motor,
+       que guarda o ultimo id visto, ignoraria as mensagens novas. */
+    limpar() {
+      const n = itens.length; itens.length = 0;
+      try { fs.appendFileSync(arquivo, JSON.stringify({ id: seq, marca: "limpo", t: Date.now() }) + "\n"); } catch { /* segue so em memoria */ }
       return n;
     },
     /* pro motor: o que o publico disse depois de `desde` (id), so gente */

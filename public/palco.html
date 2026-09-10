@@ -462,11 +462,13 @@ function mesaDeOperacoes(st, a){
   const usd = function(v){ return (v < 0 ? "-$" : "$") + Math.abs(Number(v) || 0).toFixed(2); };
   const L = [];
   if (a && a.enderecoPons) L.push('<div class="linha"><span>wallet</span><span>' + (a.saldoPons != null ? Number(a.saldoPons).toFixed(4) + " ETH" : "…") + "</span></div>");
-  const abertas = (st.positions || []).filter(function(p){ return !a || p.agent === a.id; });
+  /* so a era da Pons: o historico da pump nao entra (Michel: "o desk inicia tudo" no lancamento) */
+  const daPons = function(p){ return String(p.venue || "").toLowerCase() === "pons"; };
+  const abertas = (st.positions || []).filter(function(p){ return (!a || p.agent === a.id) && daPons(p); });
   L.push('<div class="titulo">open positions</div>');
   if (!abertas.length) L.push('<div class="mudo">none</div>');
   abertas.slice(0, 6).forEach(function(p){ const pnl = Number(p.unrealized) || 0; L.push('<div class="linha"><span>' + esc(p.symbol || (p.market || "").slice(0, 8)) + " · " + usd(p.sizeUsd) + '</span><span class="' + (pnl >= 0 ? "verde" : "vermelho") + '">' + usd(pnl) + "</span></div>"); });
-  const fechadas = (st.closed || []).slice(-5).reverse();
+  const fechadas = (st.closed || []).filter(daPons).slice(-5).reverse();
   L.push('<div class="titulo">last trades</div>');
   if (!fechadas.length) L.push('<div class="mudo">none yet</div>');
   fechadas.forEach(function(p){ const pnl = Number(p.pnl != null ? p.pnl : p.realized) || 0; L.push('<div class="linha"><span>' + esc(p.symbol || (p.market || "").slice(0, 8)) + " · " + usd(p.sizeUsd) + '</span><span class="' + (pnl >= 0 ? "verde" : "vermelho") + '">' + usd(pnl) + "</span></div>"); });

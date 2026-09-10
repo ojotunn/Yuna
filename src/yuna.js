@@ -144,6 +144,14 @@ const servidor = http.createServer(async (req, res) => {
     } catch { /* sem estado */ }
     return enviar(res, 200, { itens: CHAT.recentes(url.searchParams.get("desde")), publico: CHAT.publico(), agora: Date.now() });
   }
+  /* LIMPAR O CHAT (dia do lancamento). So com o token do dono. */
+  if (url.pathname === "/api/chat/limpar" && req.method === "POST") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN) return enviar(res, 401, { erro: "token invalido" });
+    const n = CHAT.limpar();
+    console.log(`[chat] limpo: ${n} mensagens`);
+    return enviar(res, 200, { ok: true, apagadas: n });
+  }
   if (url.pathname === "/api/chat" && req.method === "POST") {
     let corpo = "";
     for await (const p of req) { corpo += p; if (corpo.length > 4000) break; }
