@@ -69,6 +69,9 @@ export function criarPons(carteira) {
       precoEthPorToken: precoEth * 10 ** dec / 1e18,                 // ETH por token inteiro
       mcapEth: supply > 0n ? precoEth * Number(supply) / 1e18 : null,   // ETH
       reservaEth: Number(ethers.formatEther(R)),
+      /* quanto falta pra GRADUAR (sair da curva pra DEX): limiar da fabrica, em ETH */
+      graduacaoEth: lt.graduationThreshold ? Number(ethers.formatEther(lt.graduationThreshold)) : null,
+      progressoGraduacao: lt.graduationThreshold && lt.graduationThreshold > 0n ? Math.min(100, Number(R) / Number(lt.graduationThreshold) * 100) : null,
     };
   }
 

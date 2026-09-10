@@ -79,6 +79,7 @@ export async function abrirCarteira(dir, { segredo } = {}) {
     return {
       token: lt.token, curva: lt.curve, deployer: lt.deployer, pairToken: lt.pairToken,
       creatorTaxBps: Number(lt.creatorTaxBps), phase: Number(lt.phase), exists: Boolean(lt.exists),
+      graduationThreshold: lt.graduationThreshold,
       naCurva: Number(lt.phase) === 0 && Boolean(lt.exists),
     };
   }

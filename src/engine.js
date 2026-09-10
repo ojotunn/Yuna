@@ -1753,7 +1753,8 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
     if (cfg.ponsCa && state.ponsPrecos?.[cfg.ponsCa.toLowerCase()]) {
       const pr = state.ponsPrecos[cfg.ponsCa.toLowerCase()];
       L.push(`YOUR TOKEN RIGHT NOW: ${pr.symbol || ""} ${pr.mcapEth != null ? `market cap ${pr.mcapEth.toFixed(3)} ETH, ` : ""}reserve ${pr.reservaEth.toFixed(4)} ETH` +
-        (pr.varia10min != null ? `, ${pr.varia10min >= 0 ? "+" : ""}${pr.varia10min.toFixed(1)}% in the last 10 minutes` : "") + ".");
+        (pr.varia10min != null ? `, ${pr.varia10min >= 0 ? "+" : ""}${pr.varia10min.toFixed(1)}% in the last 10 minutes` : "") +
+        (pr.progresso != null ? `. ${pr.progresso.toFixed(1)}% of the way to graduating off the curve (${pr.graduacaoEth.toFixed(2)} ETH of reserve gets it to the DEX)` : "") + ".");
     }
     L.push("");
   }
@@ -2777,7 +2778,7 @@ async function cicloDaPons() {
     hist.push({ t: Date.now(), preco: st.precoEthPorToken }); if (hist.length > 60) hist.splice(0, hist.length - 60);
     const antes = hist.find((h) => Date.now() - h.t >= 10 * 60 * 1000 && Date.now() - h.t < 20 * 60 * 1000) || null;
     const varia10min = antes && antes.preco > 0 ? (st.precoEthPorToken / antes.preco - 1) * 100 : null;
-    state.ponsPrecos[m] = { preco: st.precoEthPorToken, symbol: st.symbol, mcapEth: st.mcapEth, reservaEth: st.reservaEth, varia10min, t: Date.now(), naCurva: st.naCurva };
+    state.ponsPrecos[m] = { preco: st.precoEthPorToken, symbol: st.symbol, mcapEth: st.mcapEth, reservaEth: st.reservaEth, varia10min, t: Date.now(), naCurva: st.naCurva, graduacaoEth: st.graduacaoEth, progresso: st.progressoGraduacao };
     for (const p of (state.positions || []).filter((p) => p.venue === "pons" && mesmoCa(p.market, m))) {
       try { const v = Number(cotarVendaPons(BigInt(p.tokens), st)) / 1e18; p.valorEth = v; p.unrealized = v - p.ethIn; p.price = st.precoEthPorToken; } catch { /* segue */ }
     }
