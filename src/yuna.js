@@ -179,6 +179,15 @@ const servidor = http.createServer(async (req, res) => {
       return enviar(res, 200, { ok: true, de: versao, para: nova, chars: texto.length });
     } catch (e) { return enviar(res, 500, { erro: e.message }); }
   }
+  /* A CAPTURA DO NAVEGADOR DELA (imagem, sem controle): e o que o site mostra
+     no painel e no monitor. O motor grava shot-yuna.jpg cada vez que ela le,
+     busca ou navega. */
+  if (url.pathname === "/api/shot") {
+    const arq = path.join(ROOT, "src", "data", "shot-yuna.jpg");
+    if (!fs.existsSync(arq)) return enviar(res, 404, { erro: "sem captura" });
+    res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "no-store" });
+    return res.end(fs.readFileSync(arq));
+  }
   /* LIMPAR O CHAT (dia do lancamento). So com o token do dono. */
   if (url.pathname === "/api/chat/limpar" && req.method === "POST") {
     const tok = req.headers["x-admin-token"];

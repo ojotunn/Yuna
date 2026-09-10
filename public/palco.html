@@ -75,7 +75,7 @@
   #navegador iframe { pointer-events: none !important; }
   #navegador .topo { height: 22px; background: linear-gradient(#f2f2f2, #dedede); border-bottom: 1px solid #b5b5b5; font: 11px ui-monospace, Menlo, Consolas, monospace; color: #555; padding: 3px 8px; display: flex; gap: 8px; align-items: center; }
   #navegador .topo i { width: 8px; height: 8px; border-radius: 50%; background: #e24; display: inline-block; }
-  #navegador iframe { flex: 1; border: 0; width: 100%; background: #0b0f1a; }
+  #navegador img { flex: 1; width: 100%; min-height: 0; object-fit: contain; object-position: top; background: #0b0f1a; }
   @media (max-width: 860px){ #navegador { width: 70%; bottom: 46px; } }
   #carga { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #fff; color: #666; font: 13px ui-monospace, Menlo, Consolas, monospace; z-index: 2; }
   #chat { position: fixed; top: 42px; right: 0; bottom: 0; width: 340px; display: flex; flex-direction: column; background: #f6f6f6; border-left: 1px solid #b9b9b9; }
@@ -110,7 +110,7 @@
   <div id="carga">loading her room…</div>
   <div id="faz"></div>
   <div id="css3d"></div>
-  <div id="navegador"><div class="topo"><i></i><span id="navegador-url">yuna is browsing</span></div><iframe id="navegador-quadro" title="Yuna's browser, live" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe></div>
+  <div id="navegador"><div class="topo"><i></i><span id="navegador-url">yuna is browsing</span></div><img id="navegador-quadro" alt=""></div>
   <div id="balao"></div>
   <div id="botoes"><button onclick="window.enquadrar('rosto')">face</button><button onclick="window.enquadrar('cena')">room</button></div>
 </div>
@@ -365,7 +365,9 @@ async function ouvirMotor(){
   if (a && a.gesto && a.gesto.t && a.gesto.t !== MOTOR.ultimoGesto){ MOTOR.ultimoGesto = a.gesto.t; if (Date.now() - a.gesto.t < 120000) gesticular(a.gesto.tipo); }
   const faz = document.getElementById("faz");
   const naMesa = Y.estacao === "mesa" && Y.estado === "na estacao";
-  const liveUrl = a && (typeof a.liveView === "string" ? a.liveView : (a.liveView && (a.liveView.url || a.liveView.liveUrl))) || null;
+  /* SO CAPTURA, NUNCA A SESSAO: a URL do live view do Browserbase e um inspetor
+     interativo e nao sai mais do servidor. A imagem muda quando ela le/navega. */
+  const liveUrl = a && a.lastRead && a.lastRead.shot ? "/api/shot?t=" + a.lastRead.shot : null;
   try { navegadorNaTela(liveUrl, naMesa); } catch (e){ console.warn("navegador:", e); }
   if (a && a.bancadaTela && naMesa) bancadaNasTelas(a.bancadaTela);
   if (liveUrl && naMesa) faz.textContent = "browsing"; else if (a && a.bancadaTela && naMesa) faz.textContent = "coding: " + (a.bancadaTela.arquivo || ""); else faz.textContent = "";
@@ -405,14 +407,14 @@ function navegadorNaTela(liveUrl, naMesa){
   const querReabrir = querAbrir && (NAV.url !== liveUrl || !NAV.aberto);
   if (querReabrir){
     NAV.url = liveUrl;
-    const fresco = liveUrl + (liveUrl.includes("?") ? "&" : "?") + "_r=" + Date.now();
+    const fresco = liveUrl;   // a captura ja vem com o carimbo de tempo
     NAV.quadro.src = fresco;
     document.getElementById("navegador-url").textContent = "yuna is browsing";
     /* espelho no monitor: iframe em CSS3D no vidro do CRT da frente */
     const t = monitorPrincipal();
     if (t){
       if (!NAV.objeto){
-        const el = document.createElement("iframe"); el.width = 640; el.height = 480; el.setAttribute("sandbox", "allow-scripts allow-same-origin"); el.setAttribute("referrerpolicy", "no-referrer");
+        const el = document.createElement("img"); el.width = 640; el.height = 480; el.style.objectFit = "cover"; el.style.objectPosition = "top"; el.style.background = "#0b0f1a";
         NAV.monitorEl = el; NAV.objeto = new CSS3DObject(el); cenaCss.add(NAV.objeto);
       }
       NAV.monitorEl.src = fresco;
@@ -432,7 +434,7 @@ function navegadorNaTela(liveUrl, naMesa){
   NAV.aberto = querAbrir;
   NAV.caixa.classList.toggle("aberto", querAbrir);
   if (!querAbrir){
-    NAV.quadro.src = "about:blank";
+    NAV.quadro.removeAttribute("src");
     if (NAV.objeto){ cenaCss.remove(NAV.objeto); NAV.objeto = null; NAV.monitorEl = null; }
     vidroSolido();
     NAV.url = null;
