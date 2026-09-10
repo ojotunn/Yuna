@@ -432,7 +432,7 @@ const servidor = http.createServer(async (req, res) => {
        se a maquina de casa cair, o site nao pode ficar mostrando para sempre um
        retrato de ela trabalhando. */
     if (estadoDeCasa && Date.now() - estadoDeCasa.t < 120000)
-      return enviar(res, 200, { running: estadoDeCasa.running, state: estadoDeCasa.estado, deCasa: true });
+      return enviar(res, 200, { running: estadoDeCasa.running, state: semLiveView(estadoDeCasa.estado), deCasa: true });
     /* A URL DO LIVE VIEW DO BROWSERBASE NUNCA SAI DAQUI. E um inspetor
        interativo: quem abre controla o navegador dela (09/09/2026, noite do
        lancamento: alguem abriu porno na tela dela). O site mostra o navegador
