@@ -57,6 +57,14 @@ const CHAT = criarChat(path.join(ROOT, "src", "data", "chat.jsonl"));
 function versao3d() {
   try { return String(Math.floor(fs.statSync(path.join(ROOT, "public", "3d", "manifesto.json")).mtimeMs / 1000)); } catch { return "1"; }
 }
+/* o CA do token dela: o ajuste ao vivo (src/data/ajustes.json, sem restart) vence a variavel */
+function ponsCaVivo() {
+  try {
+    const aj = JSON.parse(fs.readFileSync(process.env.AJUSTES_FILE || path.join(ROOT, "src", "data", "ajustes.json"), "utf8"));
+    if (aj && typeof aj.PONS_CA === "string" && /^0x[0-9a-fA-F]{40}$/.test(aj.PONS_CA.trim())) return aj.PONS_CA.trim();
+  } catch { /* sem ajustes */ }
+  return process.env.PONS_CA || null;
+}
 function ipDe(req) { return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "?").split(",")[0].trim(); }
 
 function anotar(txt) {
@@ -337,7 +345,7 @@ const servidor = http.createServer(async (req, res) => {
     } catch { /* sem estado ainda */ }
     return enviar(res, 200, {
       mint: process.env.LIVE_CHAT_MINT || null,
-      ca: process.env.PONS_CA || null,             // o token dela na Pons (Robinhood Chain)
+      ca: ponsCaVivo(),                            // o token dela na Pons (Robinhood Chain): o ajuste ao vivo vence o ambiente
       x: process.env.X_URL || null,
       carteira,
       carteiraPons, saldoPons,
