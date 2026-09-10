@@ -2099,7 +2099,9 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
     L.push('                     coins. That is where a mint address comes from: look, pick one, then');
     L.push('                     "pump:<that mint>" for the sheet.');
   } else {
-    L.push('  research         — `query`: a URL, or "hl:COIN" for candles.');
+    L.push('  research         — `query`: a URL, "hl:COIN" for candles, "pons:explore" for what is live on the');
+    L.push('                     Pons curve right now (symbol, reserve, age, CA), or "pons:<CA>" for a token sheet.');
+    L.push('                     That is where a contract address comes from: look, pick, then `propose` venue pons.');
   }
   L.push('                     A URL opens in YOUR browser tab and stays open. You see one screen at a time.');
   L.push('  browse           — `query`: "scroll down" | "scroll up" | "click: <link text>" | "back".');
@@ -3229,6 +3231,27 @@ async function apply(agent, action) {
 
     case "research": {
       if (cfg.venue !== "pump" && /pump\.fun|^\s*pump:/i.test(String(action.query || "") + " " + String(action.text || ""))) return emit("denied", agent.id, "pump.fun is not part of this house anymore — your desk is Pons");
+      /* A BUSSOLA DA PONS: "pons:explore" lista o que esta na curva agora; "pons:0x..." a ficha de um token. Sem navegador: direto da corrente. */
+      if (pons && /^\s*pons:/i.test(String(action.query || ""))) {
+        const q = String(action.query).trim().slice(5).trim();
+        marcarCena(agent, "research", null);
+        try {
+          if (/^explore|^live|^board|^$/i.test(q)) {
+            const r = await pons.explorar();
+            const linha = (f) => `  ${f.symbol} — reserve ${f.reservaEth.toFixed(2)} ETH · ${f.idadeMin} min old · CA ${f.token}`;
+            agent.scratch = "[pons explore — tokens on the Pons curve right now, from the factory's own launch log]\nBIGGEST RESERVE:\n" +
+              r.porReserva.map(linha).join("\n") + "\nNEWEST:\n" + r.novos.map(linha).join("\n") +
+              '\n(reserve = ETH sitting in the curve; bigger reserve = more bought. "pons:<CA>" for a sheet; "propose" venue pons to trade.)';
+            emit("did", agent.id, `looked at the Pons board — ${r.total} recent launches`);
+          } else if (/^0x[0-9a-fA-F]{40}$/.test(q)) {
+            const st = await pons.estado(q);
+            agent.scratch = `[pons sheet ${st.symbol} ${q}]
+on the curve: ${st.naCurva ? "yes" : "no (graduated)"} · reserve ${st.reservaEth.toFixed(4)} ETH · market cap ${st.mcapEth != null ? st.mcapEth.toFixed(3) + " ETH" : "?"} · price ${st.precoEthPorToken.toExponential(3)} ETH/token · fees ${Number(st.feeBps) / 100}% + creator ${Number(st.taxBps) / 100}%` + (cfg.ponsCa && mesmoCa(q, cfg.ponsCa) ? " · THIS IS YOUR OWN TOKEN" : "");
+            emit("did", agent.id, `read the Pons sheet of ${st.symbol}`);
+          } else agent.scratch = `[pons: use "pons:explore" or "pons:<contract address 0x...>"]`;
+        } catch (e) { agent.scratch = `[pons lookup failed: ${e.message}]`; }
+        return;
+      }
       const q = String(action.query ?? "").trim();
       agent.reading = q;
       emit("did", agent.id, `reading ${q}`);

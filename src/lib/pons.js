@@ -119,5 +119,31 @@ export function criarPons(carteira) {
     return { hash: r.hash, tokensIn: qtd, ethOutCotado: Number(ethers.formatEther(cotado)), ethDelta: Number(ethers.formatEther(ethDepois - ethAntes)), symbol: st.symbol };
   }
 
-  return { estado, saldoToken, comprar, vender, cotarCompra, cotarVenda, ehEndereco };
+  /* A BUSSOLA DA PONS: os lancamentos recentes na fabrica (evento de lancamento,
+     topic 0x8d4aad49...), com a ficha de cada um. Blocos de ~0,1 s: 60000 blocos
+     sao ~100 minutos. Devolve os mais capitalizados e os mais novos. */
+  const TOPICO_LANCOU = "0x8d4aad4953d0ca700d468f3753aa14432d1b35b43ec6409f051fb6aa43a89607";
+  async function explorar({ blocos = 60000, max = 14 } = {}) {
+    const bn = await provider.getBlockNumber();
+    let logs = [];
+    try { logs = await provider.getLogs({ address: carteira.cadeia.fabrica, fromBlock: bn - blocos, toBlock: bn, topics: [TOPICO_LANCOU] }); }
+    catch { logs = await provider.getLogs({ address: carteira.cadeia.fabrica, fromBlock: bn - 5000, toBlock: bn, topics: [TOPICO_LANCOU] }); }
+    const vistos = new Set(), lanc = [];
+    for (const l of logs.reverse()) { const t = "0x" + (l.topics[1] || "").slice(26); if (!ehEndereco(t) || vistos.has(t)) continue; vistos.add(t); lanc.push({ token: t, bloco: l.blockNumber }); if (lanc.length >= 40) break; }
+    /* ficha LEVE (3 chamadas por token, 10 em paralelo): a completa levava 2 min */
+    const fichas = [];
+    const leve = async (x) => {
+      try {
+        const lt = await carteira.curvaDe(x.token); if (!lt.exists) return null;
+        const [[R, T], symbol] = await Promise.all([curvaC(lt.curva).getReserves(), erc20(x.token).symbol().catch(() => "?")]);
+        return { ...x, symbol, reservaEth: Number(ethers.formatEther(R)), mcapEth: null, naCurva: lt.naCurva, graduated: !lt.naCurva, idadeMin: Math.round((bn - x.bloco) * 0.1 / 60) };
+      } catch { return null; }
+    };
+    for (let i = 0; i < Math.min(lanc.length, 24); i += 10) fichas.push(...(await Promise.all(lanc.slice(i, i + 10).map(leve))).filter(Boolean));
+    const vivos = fichas.filter((f) => f.naCurva && !f.graduated);
+    const porReserva = [...vivos].sort((a, b) => b.reservaEth - a.reservaEth).slice(0, max);
+    const novos = vivos.slice(0, 8);
+    return { bloco: bn, total: fichas.length, porReserva, novos };
+  }
+  return { estado, saldoToken, comprar, vender, cotarCompra, cotarVenda, ehEndereco, explorar };
 }
