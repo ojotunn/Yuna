@@ -5870,21 +5870,37 @@ async function loop() {
      uma foto da aba dela e publica em lastRead.shot; o site troca a imagem.
      Nao expoe sessao nenhuma. Falhou (aba navegando, sessao morta): pula. */
   {
+    /* SCREENCAST: o proprio Chrome empurra um frame JPEG a cada mudanca da tela
+       (CDP Page.startScreencast). E o "tempo real" que o Michel pediu, sem
+       expor sessao. Uma foto por segundo via page.screenshot levava 5-8 s por
+       foto pelo caminho remoto do Browserbase; o screencast e sub-segundo. Se a
+       aba trocar (sessao nova), religa. */
     const ela = state.agents[ORDER[0]];
-    let ocupado = false;
+    const shotPath = path.join(DATA, `shot-${ela?.id || "yuna"}.jpg`);
+    let ligadoEm = null, ligando = false;
     setInterval(async () => {
-      if (ocupado || !ela || !process.env.BROWSERBASE_API_KEY) return;
+      if (ligando || !ela || !process.env.BROWSERBASE_API_KEY) return;
       if ((ela.cena && ela.cena.movel) !== "mesa" || state.resting) return;
-      ocupado = true;
+      ligando = true;
       try {
         const page = await chrome.getAgentPage(ela.id);
-        const shotPath = path.join(DATA, `shot-${ela.id}.jpg`);
-        await page.screenshot({ path: shotPath, type: "jpeg", quality: 45 });
-        const url = page.url();
-        ela.lastRead = { ...(ela.lastRead || {}), target: url && !/^about:/.test(url) ? url : (ela.lastRead?.target || ""), shot: Date.now(), kind: ela.lastRead?.kind || "web" };
-      } catch { /* aba no meio de uma navegacao ou sessao caida: proxima volta */ }
-      ocupado = false;
-    }, 1000);   // 1 foto por segundo: "tempo real" sem expor a sessao (Michel, 10/09)
+        if (ligadoEm !== page) {
+          const cdp = await page.target().createCDPSession();
+          cdp.on("Page.screencastFrame", async (f) => {
+            try {
+              fs.writeFileSync(shotPath, Buffer.from(f.data, "base64"));
+              const url = page.url();
+              ela.lastRead = { ...(ela.lastRead || {}), target: url && !/^about:/.test(url) ? url : (ela.lastRead?.target || ""), shot: Date.now(), kind: ela.lastRead?.kind || "web" };
+            } catch { /* disco */ }
+            try { await cdp.send("Page.screencastFrameAck", { sessionId: f.sessionId }); } catch { /* sessao foi */ }
+          });
+          await cdp.send("Page.startScreencast", { format: "jpeg", quality: 45, maxWidth: 1024, maxHeight: 768, everyNthFrame: 2 });
+          ligadoEm = page;
+          log("[tela] screencast do navegador ligado");
+        }
+      } catch (e) { ligadoEm = null; }
+      ligando = false;
+    }, 3000);
   }
 
   /* O NAVEGADOR SOBE JUNTO COM O MOTOR.

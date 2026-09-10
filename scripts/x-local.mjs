@@ -185,9 +185,20 @@ for (;;) {
       console.log(alvo
         ? "  respondendo " + p.para + ": " + String(p.text).slice(0, 60)
         : "  publicando: " + String(p.text).slice(0, 70));
-      const r = alvo
-        ? await responder(page, alvo, p.text, { publicar: PUBLICAR })
-        : await postar(page, p.text, { publicar: PUBLICAR });
+      /* O DETECTOR DE LOGIN ERRA as vezes na pagina de compor ("nao esta logada",
+         "nao achei o botao") e no ciclo seguinte publica normal. Em vez de
+         esperar 6 min, recarrega a home e tenta de novo na hora, ate 2 vezes. */
+      let r = null;
+      for (let tentativa = 1; tentativa <= 3; tentativa++) {
+        r = alvo
+          ? await responder(page, alvo, p.text, { publicar: PUBLICAR })
+          : await postar(page, p.text, { publicar: PUBLICAR });
+        if (r?.ok || !/nao esta logada|nao achei o botao/.test(String(r?.motivo || ""))) break;
+        console.log(`  (${r.motivo}; recarregando e tentando de novo, ${tentativa}/3)`);
+        await page.goto("https://x.com/home", { waitUntil: "domcontentloaded" }).catch(() => {});
+        await new Promise((res) => setTimeout(res, 6000));
+        if (!await estaLogada(page)) await plantarSessao(page);
+      }
       if (r?.ok && !r.ensaio) {
         /* SO MARCA DEPOIS DE PUBLICAR DE VERDADE. Marcar antes enterraria o
            post na fila sem ele ter saido — e o botao de desfazer no painel
