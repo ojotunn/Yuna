@@ -885,11 +885,11 @@ const servidor = http.createServer(async (req, res) => {
     try { dado = JSON.parse(corpo || "{}"); } catch { return enviar(res, 400, { erro: "corpo torto" }); }
 
     const tipo = String(dado.tipo || "");
-    if (!["postei", "descartar", "comentario", "restaurar"].includes(tipo))
-      return enviar(res, 400, { erro: "tipo tem que ser postei, descartar, comentario ou restaurar" });
-    if (tipo === "comentario" && !String(dado.texto || "").trim())
-      return enviar(res, 400, { erro: "comentario vazio" });
-    if (tipo !== "comentario" && !String(dado.post || "").trim())
+    if (!["postei", "descartar", "comentario", "restaurar", "novo"].includes(tipo))
+      return enviar(res, 400, { erro: "tipo tem que ser postei, descartar, comentario, restaurar ou novo" });
+    if ((tipo === "comentario" || tipo === "novo") && !String(dado.texto || "").trim())
+      return enviar(res, 400, { erro: "texto vazio" });
+    if (tipo !== "comentario" && tipo !== "novo" && !String(dado.post || "").trim())
       return enviar(res, 400, { erro: "falta o id do post" });
 
     const arq = process.env.X_ACOES_FILE || path.join(ROOT, "src", "data", "x-acoes.json");

@@ -2451,6 +2451,20 @@ export function processXAcoes() {
        nunca lia. O botao "PUT IT BACK" nao fazia nada, em silencio — e ele
        existe justamente porque o Michel clicou em "POSTED IT" nos quatro posts
        achando que publicava. */
+    /* "novo": a CASA poe um post na fila dela (o texto vem do painel/dono; o
+       x-local publica como qualquer outro). Usado na noite do lancamento pra
+       garantir o contrato no X. */
+    if (a.tipo === "novo") {
+      state.xVistas.push(a.id);
+      const texto = String(a.texto || "").trim().slice(0, 280);
+      if (texto) {
+        const id = `p${Date.now().toString(36)}${state.posts.length.toString(36)}`;
+        state.posts.push({ id, agent: ORDER[0], text: texto, t: Date.now(), sent: false, casa: true });
+        emit("system", null, `— the house queued a post on X: "${texto.slice(0, 80)}…" —`);
+        log(`[x] post da casa na fila: ${texto.slice(0, 60)}`);
+      }
+      continue;
+    }
     if (a.tipo === "postei" || a.tipo === "descartar" || a.tipo === "restaurar") {
       const post = state.posts.find((x) => x.id === a.post);
       /* NAO CONSOME A ACAO SEM ACHAR O POST.
