@@ -513,6 +513,9 @@ export async function repousar(id) {
 
 /* A pagina onde a aba dela descansa. */
 export function urlDeCasa() {
+  /* FORA DA PUMP a "casa" do navegador dela e o proprio site (na noite do
+     lancamento na Pons o navegador voltava sozinho pra pagina da pump.fun). */
+  if ((process.env.VENUE || "pons").trim().toLowerCase() !== "pump") return (process.env.URL_DE_CASA || "https://yuna.cam").trim();
   const mint = String(process.env.LIVE_CHAT_MINT || "").trim();
   return mint ? `https://pump.fun/coin/${mint}` : "https://pump.fun/board";
 }
