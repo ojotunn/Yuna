@@ -2902,12 +2902,15 @@ function describeView(r, header) {
    nunca usou uma vez.
    Agora ela ESCOLHE: qualquer acao pode vir com `place`, e a tabela abaixo so
    decide quando ela nao escolheu nada. */
+/* O QUARTO NOVO (3D, 09/09/2026): mesa com os CRTs, sofa de frente pra TV,
+   cama, o meio do quarto, o halter e o Pikachu. Nao ha cozinha, pufe nem
+   caixa — eram do quarto 2D. */
 const LUGARES = {
-  mesa:      "the desk with the PC — where the browser, the charts and the work live",
+  mesa:      "the desk buried under the old machines and the CRT monitors — where the browser and the work live",
   sofa:      "the couch, facing the TV — where you stop",
-  puff:      "the paw-shaped beanbag — phone in hand, games, writing",
-  cafe:      "the kitchen counter — coffee, standing up, thinking about yourself",
-  pesinhos:  "the dumbbells on the floor — moving your body instead of your mouth",
+  centro:    "the middle of the room, standing — thinking, stretching, waving at whoever is watching",
+  halter:    "the dumbbell on the floor — moving your body instead of your mouth",
+  pikachu:   "the Pikachu on the floor — the one thing in here you will not explain",
 };
 /* A CAMA E SO PRA DORMIR.
    Ela nao entra na lista acima de proposito. A animacao da cama e de DORMIR —
@@ -2924,17 +2927,17 @@ const MOVEL_DA_ACAO = {
   rugcheck: "mesa", work: "mesa", sell: "mesa", bounty: "mesa", check: "mesa",
   rewrite_persona: "mesa",
   // Escrever pro mundo: no pufe, com o aparelho na mao.
-  post: "puff", prime: "puff",
+  post: "sofa", prime: "sofa",
   // Pensar sobre si: levanta e vai pra cozinha.
-  aspire: "cafe", remember: "cafe", borrow: "cafe", bill: "cafe",
+  aspire: "centro", remember: "centro", borrow: "centro", bill: "centro",
   // Pedir uma capacidade e pensar sobre si, nao trabalhar: mesmo lugar.
-  ask: "cafe",
+  ask: "centro",
   /* CONSULTAR E IR FALAR COM ALGUEM. O robozinho do Claude fica em cima da
      caixa; ela atravessa o quarto e conversa ali, na frente de quem assiste.
      Era "cafe" — do outro lado do quarto, sem ninguem pra falar. Decisao do
      Michel em 02/09/2026: "melhor ela ir ate o robo do claude em cima da
      caixa e fazer a consulta". */
-  consult: "caixa",
+  consult: "centro",
   // Encomendar uma ferramenta e trabalho: o PC.
   escrever: "mesa", rodar: "mesa",
   // Parar de verdade.
@@ -2945,7 +2948,7 @@ const MOVEL_DA_ACAO = {
   unwind: null,
   // Desenhar e no tapete, sentada no chao com o tablet: e o unico lugar do
   // quarto onde ela aparece INTEIRA, e desenhar se le pela postura.
-  draw: "tapete",
+  draw: "sofa",
 };
 /* Acao que o motor nao conhece NAO move ninguem: `apply` recusa logo abaixo
    com "unknown action", e sem esta trava a recusa ainda assim mandava ela
