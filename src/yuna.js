@@ -65,6 +65,13 @@ function ponsCaVivo() {
   } catch { /* sem ajustes */ }
   return process.env.PONS_CA || null;
 }
+/* tira a URL do live view de cada agente antes de publicar o estado */
+function semLiveView(estado) {
+  if (!estado || !estado.agents) return estado;
+  const copia = { ...estado, agents: {} };
+  for (const [id, a] of Object.entries(estado.agents)) copia.agents[id] = { ...a, liveView: null };
+  return copia;
+}
 function ipDe(req) { return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "?").split(",")[0].trim(); }
 
 function anotar(txt) {
@@ -426,11 +433,15 @@ const servidor = http.createServer(async (req, res) => {
        retrato de ela trabalhando. */
     if (estadoDeCasa && Date.now() - estadoDeCasa.t < 120000)
       return enviar(res, 200, { running: estadoDeCasa.running, state: estadoDeCasa.estado, deCasa: true });
+    /* A URL DO LIVE VIEW DO BROWSERBASE NUNCA SAI DAQUI. E um inspetor
+       interativo: quem abre controla o navegador dela (09/09/2026, noite do
+       lancamento: alguem abriu porno na tela dela). O site mostra o navegador
+       por captura, nao pela sessao. */
     let estado = filho ? ultimoEstado : null;
     if (!estado) {
       try { estado = JSON.parse(fs.readFileSync(ESTADO, "utf8")); } catch { estado = null; }
     }
-    return enviar(res, 200, { running: !!filho, state: estado });
+    return enviar(res, 200, { running: !!filho, state: semLiveView(estado) });
   }
 
   /* O LANCAMENTO. Marca a hora e a jornada passa a contar dali: 16 acordada,
