@@ -183,9 +183,9 @@ const ACTION_SCHEMA = {
         // O enum ja restringe os valores, entao o type e redundante de qualquer jeito.
         // UM venue so: pump.fun, a vista. Perps sairam (sem API real; ver
         // broker.js). Comprar e a unica entrada; sair e `close`.
-        venue: { enum: ["pump", null] },
+        venue: { enum: ["pump", "pons", null] },
         market: { type: ["string", "null"] },
-        side: { enum: ["buy", null] },
+        side: { enum: ["buy", "sell", null] },
         sizeUsd: { type: ["number", "null"] },
         conviction: { type: ["number", "null"] },
         thesis: { type: ["string", "null"] },

@@ -28,6 +28,8 @@ import { parseSchedule, dueMark, describe as describeSchedule } from "./lib/sche
 import * as world from "./lib/events.js";
 import { collectSecrets, assertClean, redact, SecretLeak, addRuntimeSecret } from "./lib/secrets.js";
 import { abrirCarteira, REGRAS as REGRAS_PONS } from "./lib/carteira-pons.js";
+import { criarPons, cotarVenda as cotarVendaPons } from "./lib/pons.js";
+import * as mem2 from "./lib/memory.js";
 import * as chat from "./lib/pumpchat.js";
 import { criarChatDoSite } from "./lib/chat-site-motor.js";
 import * as chrome from "./lib/browser.js";
@@ -169,6 +171,8 @@ const cfg = {
      e da pump.fun -- a sala, os callouts, a bussola do explore, o trade spot --
      so liga com VENUE=pump. Ajustavel ao vivo. */
   venue: (process.env.VENUE || "pons").trim().toLowerCase(),
+  /* TESTE REAL DA MESA, uma vez: "0x<token>:0.001" compra e vende de volta. */
+  ponsTeste: (process.env.PONS_TESTE || "").trim(),
 };
 /* fora da pump, as chaves da pump nao valem, venham do ambiente ou dos ajustes */
 function aplicarPraca() {
@@ -238,7 +242,7 @@ export const AJUSTAVEIS = [
      sozinho. Com isto, marcar o token no dia do lancamento deixa de exigir
      restart — que e o que congela a tela de quem esta assistindo. */
   "LIVE_CHAT_MINT", "ROOM_POST_ENABLED", "DRAW_ENABLED",
-  "SITE_CHAT", "PONS_CA", "VENUE",
+  "SITE_CHAT", "PONS_CA", "VENUE", "PONS_TESTE",
 ];
 
 function reloadLiveConfig() {
@@ -341,6 +345,7 @@ function reloadLiveConfig() {
   cfg.siteChat = b("SITE_CHAT", cfg.siteChat);
   cfg.ponsCa = s("PONS_CA", cfg.ponsCa);
   cfg.venue = s("VENUE", cfg.venue).toLowerCase();
+  cfg.ponsTeste = s("PONS_TESTE", cfg.ponsTeste);
   aplicarPraca();   // depois de tudo: fora da pump, a sala e o trade spot ficam desligados
   /* A ESCALA, ao vivo. Trocar o modelo por faixa de hora e a alavanca de custo
      mais forte e a que mais mexe no que ela SOA — entao tem que dar pra
@@ -1293,7 +1298,7 @@ function atualizarSaldoMoeda(agent) {
    recusando a $0,13 por turno ate o tesouro secar. */
 function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}) {
   const foe = state.agents[other(agent.id)] || null;
-  const mine = state.positions.filter((p) => p.agent === agent.id);
+  const mine = state.positions.filter((p) => p.agent === agent.id && p.venue !== "pons");   // as da Pons tem bloco proprio
 
   const openMine = state.proposals.find((p) => p.agent === agent.id);
   const openTheirs = foe ? state.proposals.find((p) => p.agent === foe.id) : null;
@@ -1732,9 +1737,24 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
     L.push(`YOUR WALLET ON ROBINHOOD CHAIN (where Pons lives): ${agent.enderecoPons}` +
       (agent.saldoPons != null ? `, holding ${Number(agent.saldoPons).toFixed(4)} ETH.` : "."));
     L.push("The house funds it. It has no way to send money out — by construction, not by rule; the only");
-    L.push("thing it can ever sign is a trade on Pons. House rules for when that desk opens: your own token");
-    L.push(`you may buy, up to ${REGRAS_PONS.tokenProprioMaxPct}% of the wallet, and you never sell it; any other token, at most`);
-    L.push(`${REGRAS_PONS.tradeMaxPct}% of the wallet per trade. The desk is not wired yet — you will be told when it is.`);
+    L.push("thing it can ever sign is a trade on Pons. House rules: your own token you may buy, up to");
+    L.push(`${REGRAS_PONS.tokenProprioMaxPct}% of the wallet per buy, and you never sell it; any other token, at most ${REGRAS_PONS.tradeMaxPct}% of the wallet`);
+    L.push("per trade. Only tokens still on the Pons curve can be traded from here.");
+    const minhasPons = (state.positions || []).filter((p) => p.agent === agent.id && p.venue === "pons");
+    if (minhasPons.length) {
+      L.push("YOUR POSITIONS ON PONS:");
+      for (const p of minhasPons) {
+        const pr = state.ponsPrecos?.[String(p.market).toLowerCase()];
+        L.push(`  [${p.id}] ${p.symbol || p.market} · in ${Number(p.ethIn).toFixed(4)} ETH · now worth ${Number(p.valorEth ?? p.ethIn).toFixed(4)} ETH` +
+          ` (${p.unrealized >= 0 ? "+" : ""}${Number(p.unrealized).toFixed(4)} ETH)` + (p.proprio ? " · your own token, never sold" : "") +
+          (pr && p.entryPreco ? ` · price ${((pr.preco / p.entryPreco - 1) * 100).toFixed(1)}% since entry` : ""));
+      }
+    }
+    if (cfg.ponsCa && state.ponsPrecos?.[cfg.ponsCa.toLowerCase()]) {
+      const pr = state.ponsPrecos[cfg.ponsCa.toLowerCase()];
+      L.push(`YOUR TOKEN RIGHT NOW: ${pr.symbol || ""} ${pr.mcapEth != null ? `market cap ${pr.mcapEth.toFixed(3)} ETH, ` : ""}reserve ${pr.reservaEth.toFixed(4)} ETH` +
+        (pr.varia10min != null ? `, ${pr.varia10min >= 0 ? "+" : ""}${pr.varia10min.toFixed(1)}% in the last 10 minutes` : "") + ".");
+    }
     L.push("");
   }
   if (cfg.ponsCa) {
@@ -2094,6 +2114,15 @@ function situationFor(agent, shift = { label: "fixed" }, { enxuto = false } = {}
        o prompt explicava o `to: "room"` sem nunca dizer que `speak` existe, e
        a unica porta dela para o publico ficava escondida. */
     L.push('  speak            — `to`: "room", `text`: what you say to the people watching. Free.');
+  if (cfg.venue === "pons" && agent.enderecoPons && pons) {
+    L.push('  propose          — a trade on Pons, executed RIGHT AWAY (no proposal step): `venue` "pons",');
+    L.push('                     `market` = the token contract (0x…), `side` "buy" or "sell", `sizeUsd` = the amount');
+    L.push('                     in ETH (the field keeps its old name; here it means ETH). `thesis`: why, in your words.');
+    L.push(`                     Your own token: buy only, at most ${REGRAS_PONS.tokenProprioMaxPct}% of the wallet per buy, never sold.`);
+    L.push(`                     Any other token: at most ${REGRAS_PONS.tradeMaxPct}% of the wallet per trade; "sell" sells all you hold of it.`);
+    L.push('                     Only tokens still on the Pons curve. Real ETH leaves your wallet and anyone can audit it.');
+    L.push('  close            — `positionId`: sells that Pons position (never your own token).');
+  }
   L.push('  gesture          — `text`: "wave" | "cheer" | "dance" | "clap". Free, no words needed. Wave at the');
   L.push('                     people watching when someone says hi or something kind; cheer, clap or dance when');
   L.push('                     your token climbs or the room earned it. A gesture every turn stops meaning anything.');
@@ -2646,6 +2675,116 @@ function agentAddress(agentId) {
    passar; ajustavel se o numero se provar outro. */
 /* Lido de cfg pra poder mudar ao vivo — `num()` congela no boot. */
 const tetoSala = () => cfg.roomMaxChars ?? 240;
+
+/* ============================================================ A MESA DA PONS
+   Compra e venda na curva V2, com as regras do Michel (09/09/2026) aplicadas
+   em codigo, nao em pedido: o token dela ate 20% do saldo por compra e NUNCA
+   vende; os outros ate 10% por operacao; sempre sobra gas. Executa na hora —
+   a "objecao da casa" da pump fica de fora por enquanto. */
+const ehCa = (a) => /^0x[0-9a-fA-F]{40}$/.test(String(a || ""));
+const mesmoCa = (a, b) => String(a || "").toLowerCase() === String(b || "").toLowerCase();
+
+async function operarNaPons(agent, action) {
+  if (!pons || !carteiraPons) return emit("denied", agent.id, "the Pons desk is not open (no wallet)");
+  const market = String(action.market || "").trim();
+  const side = String(action.side || "buy").toLowerCase();
+  if (!ehCa(market)) return emit("denied", agent.id, "market must be the token's contract address (0x…)");
+  const proprio = cfg.ponsCa && mesmoCa(market, cfg.ponsCa);
+  if (side === "sell") {
+    if (proprio) return emit("denied", agent.id, "you never sell your own token — that one stays");
+    return fecharNaPons(agent, { market });
+  }
+  if (side !== "buy") return emit("denied", agent.id, "side must be buy or sell");
+  const eth = Number(action.sizeUsd);
+  if (!Number.isFinite(eth) || eth <= 0) return emit("denied", agent.id, "sizeUsd must be the amount in ETH (a positive number)");
+  const saldo = await carteiraPons.saldo();
+  if (saldo == null) return emit("denied", agent.id, "could not read the wallet balance (RPC) — try next turn");
+  const pct = proprio ? REGRAS_PONS.tokenProprioMaxPct : REGRAS_PONS.tradeMaxPct;
+  const teto = Math.max(0, Math.min(saldo * pct / 100, saldo - REGRAS_PONS.reservaGasEth));
+  if (eth > teto + 1e-9) {
+    agent.stats.denials++;
+    return emit("denied", agent.id, `${eth.toFixed(4)} ETH is over the cap: ${proprio ? "your own token takes at most" : "any token takes at most"} ${pct}% of the wallet (${teto.toFixed(4)} ETH right now, gas reserved)`);
+  }
+  let r;
+  try { r = await pons.comprar(market, eth, 500); }
+  catch (e) { agent.stats.denials++; return emit("denied", agent.id, `the buy did not go through: ${e.message}`); }
+  const dec = r.decimals ?? 18;
+  const pos = {
+    id: "pons-" + Date.now().toString(36), agent: agent.id, venue: "pons", market, symbol: r.symbol, side: "buy",
+    tokens: r.tokensOut.toString(), tokensNum: Number(r.tokensOut) / 10 ** dec, ethIn: eth, entryPreco: r.precoEthPorToken,
+    sizeUsd: eth, entry: r.precoEthPorToken || 0, price: r.precoEthPorToken || 0, unrealized: 0, valorEth: eth,
+    paper: false, proprio: !!proprio, thesis: String(action.thesis || "").slice(0, 300), t: Date.now(), hash: r.hash,
+  };
+  /* compras repetidas do token dela viram UMA posicao (ele nunca vende): soma */
+  const existente = proprio ? state.positions.find((p) => p.venue === "pons" && p.agent === agent.id && mesmoCa(p.market, market)) : null;
+  if (existente) { existente.tokens = (BigInt(existente.tokens) + r.tokensOut).toString(); existente.tokensNum += pos.tokensNum; existente.ethIn += eth; existente.sizeUsd += eth; existente.hash = r.hash; }
+  else state.positions.push(pos);
+  agent.stats.trades++;
+  marcarCena(agent, "propose", null);
+  emit("did", agent.id, `bought ${pos.tokensNum.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${r.symbol} on Pons for ${eth.toFixed(4)} ETH` + (proprio ? " — her own token, held, never sold" : "") + ` · tx ${r.hash}`);
+  log(`[pons] compra ${r.symbol} ${eth} ETH tx ${r.hash}`);
+}
+
+async function fecharNaPons(agent, action) {
+  if (!pons || !carteiraPons) return emit("denied", agent.id, "the Pons desk is not open (no wallet)");
+  const pos = action.positionId
+    ? state.positions.find((p) => p.id === action.positionId && p.venue === "pons" && p.agent === agent.id)
+    : state.positions.find((p) => p.venue === "pons" && p.agent === agent.id && mesmoCa(p.market, action.market));
+  if (!pos) return emit("denied", agent.id, "no such Pons position");
+  if (pos.proprio || (cfg.ponsCa && mesmoCa(pos.market, cfg.ponsCa))) return emit("denied", agent.id, "you never sell your own token — that one stays");
+  let r;
+  try { r = await pons.vender(pos.market, "tudo", 500); }
+  catch (e) { agent.stats.denials++; return emit("denied", agent.id, `the sell did not go through: ${e.message}`); }
+  const ethOut = r.ethDelta > 0 ? r.ethDelta : r.ethOutCotado;
+  const pnl = ethOut - pos.ethIn;
+  state.positions = state.positions.filter((p) => p !== pos);
+  state.closed.push({ ...pos, ethOut, pnlEth: pnl, realized: pnl, closedAt: Date.now(), hashVenda: r.hash });
+  if (state.closed.length > 200) state.closed = state.closed.slice(-150);
+  agent.stats[pnl >= 0 ? "wins" : "losses"]++;
+  marcarCena(agent, "close", null);
+  emit("did", agent.id, `sold ${pos.symbol} on Pons for ${ethOut.toFixed(4)} ETH (${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} ETH) · tx ${r.hash}`);
+  log(`[pons] venda ${pos.symbol} ${ethOut} ETH (pnl ${pnl}) tx ${r.hash}`);
+}
+
+/* todo ciclo: precos, lucro nao realizado, comemoracao, e o teste one-shot */
+async function cicloDaPons() {
+  state.ponsPrecos ||= {}; state.ponsHistorico ||= {};
+  const ela = state.agents[ORDER[0]];
+  const mercados = new Set((state.positions || []).filter((p) => p.venue === "pons").map((p) => String(p.market).toLowerCase()));
+  if (cfg.ponsCa && ehCa(cfg.ponsCa)) mercados.add(cfg.ponsCa.toLowerCase());
+  for (const m of mercados) {
+    let st;
+    try { st = await pons.estado(m); } catch (e) { log(`[pons] estado ${m.slice(0, 8)}: ${e.message}`); continue; }
+    const hist = (state.ponsHistorico[m] ||= []);
+    hist.push({ t: Date.now(), preco: st.precoEthPorToken }); if (hist.length > 60) hist.splice(0, hist.length - 60);
+    const antes = hist.find((h) => Date.now() - h.t >= 10 * 60 * 1000 && Date.now() - h.t < 20 * 60 * 1000) || null;
+    const varia10min = antes && antes.preco > 0 ? (st.precoEthPorToken / antes.preco - 1) * 100 : null;
+    state.ponsPrecos[m] = { preco: st.precoEthPorToken, symbol: st.symbol, mcapEth: st.mcapEth, reservaEth: st.reservaEth, varia10min, t: Date.now(), naCurva: st.naCurva };
+    for (const p of (state.positions || []).filter((p) => p.venue === "pons" && mesmoCa(p.market, m))) {
+      try { const v = Number(cotarVendaPons(BigInt(p.tokens), st)) / 1e18; p.valorEth = v; p.unrealized = v - p.ethIn; p.price = st.precoEthPorToken; } catch { /* segue */ }
+    }
+    /* A COMEMORACAO: o token dela subiu 10% em 10 min -> ela vibra (no maximo a cada 15 min) */
+    if (ela && cfg.ponsCa && mesmoCa(m, cfg.ponsCa) && varia10min != null && varia10min >= 10 && Date.now() - (state.ultimaComemoracao || 0) > 15 * 60 * 1000) {
+      state.ultimaComemoracao = Date.now();
+      ela.gesto = { tipo: "cheer", t: Date.now() };
+      emit("did", ela.id, `cheered — her token is up ${varia10min.toFixed(0)}% in ten minutes`);
+    }
+  }
+  /* O TESTE REAL, uma vez por processo: compra e vende de volta */
+  if (cfg.ponsTeste && !ponsTesteFeito) {
+    ponsTesteFeito = true;
+    const [token, ethStr] = cfg.ponsTeste.split(":"); const eth = Number(ethStr || "0.001");
+    log(`[pons] TESTE: compra ${eth} ETH de ${token} e vende de volta`);
+    try {
+      const c = await pons.comprar(token, eth, 800);
+      log(`[pons] TESTE compra ok: ${c.symbol} tokens ${c.tokensOut.toString()} tx ${c.hash}`);
+      const v = await pons.vender(token, "tudo", 800);
+      log(`[pons] TESTE venda ok: ${v.symbol} eth ${v.ethDelta} (cotado ${v.ethOutCotado}) tx ${v.hash}`);
+      emit("system", null, `— desk test on Pons: bought and sold ${c.symbol} (${eth} ETH round trip). The desk works. —`);
+    } catch (e) { log(`[pons] TESTE FALHOU: ${e.message}`); emit("system", null, `— desk test on Pons failed: ${e.message} —`); }
+    cfg.ponsTeste = "";
+  }
+}
 
 async function postToRoom(agent, text) {
   /* O CHAT DO SITE recebe primeiro (e o lugar onde a plateia esta agora). A
@@ -3368,6 +3507,7 @@ async function apply(agent, action) {
     }
 
     case "propose": {
+      if (cfg.venue === "pons") return await operarNaPons(agent, action);
       if (!cfg.tradingEnabled) return emit("denied", agent.id, "trading is off this session — no new entries");
       if (state.proposals.some((p) => p.agent === agent.id)) {
         emit("note", agent.id, "you already have a proposal open");
@@ -3437,6 +3577,7 @@ async function apply(agent, action) {
     }
 
     case "execute": {
+      if (cfg.venue === "pons") return emit("note", agent.id, "on Pons a `propose` already executes — there is nothing to execute separately");
       if (!cfg.tradingEnabled) return emit("denied", agent.id, "trading is off this session");
       // `let`, nao `const`: quando a ordem real e cortada pelo teto duro, a
       // proposta e reescrita com o tamanho EXECUTADO (linha ~1582) pra nao
@@ -3647,6 +3788,7 @@ async function apply(agent, action) {
     }
 
     case "close": {
+      if (cfg.venue === "pons") return await fecharNaPons(agent, action);
       const pos = state.positions.find((x) => x.id === action.positionId && x.agent === agent.id);
       if (!pos) return emit("note", agent.id, "no such position of yours");
       // sizeUsd opcional = venda PARCIAL (fecha so essa fatia). Vazio = tudo.
@@ -4342,7 +4484,7 @@ async function turnoDoRoteiro(agent, roteiro) {
    token na carteira. O que a carteira nao tem, sai do placar.
    =========================================================================== */
 async function reconciliarComACarteira() {
-  const reais = (state.positions || []).filter((p) => !p.paper && p.sizeUsd > 0);
+  const reais = (state.positions || []).filter((p) => !p.paper && p.sizeUsd > 0 && p.venue !== "pons");   // a Pons nao e Solana
   if (!reais.length) return;
   const dono = agentAddress(ORDER[0]);
   if (!dono) return;
@@ -5387,6 +5529,10 @@ async function runWorld() {
   if (carteiraPons) {
     try { const ela = state.agents[ORDER[0]]; const sd = await carteiraPons.saldo(); if (ela && sd != null) ela.saldoPons = sd; } catch { /* RPC fora */ }
   }
+  /* A MESA DA PONS, todo ciclo: preco das posicoes abertas e do token dela,
+     lucro nao realizado, e a comemoracao automatica quando o token dela sobe
+     (Michel: "animacoes felizes a medida que o token dela sobe"). */
+  if (pons) await cicloDaPons().catch((e) => log(`ciclo Pons: ${e.message}`));
   /* O CHAT DO SITE: o que o publico escreveu desde a ultima olhada vai pra fila
      do agente; o turno consome. Na primeira olhada so marca onde esta (nao
      reencena o historico pra ela). Nunca trava o ciclo.
@@ -5597,6 +5743,8 @@ async function recuperarCiclosPerdidos() {
 /* A CARTEIRA DELA NA PONS (Robinhood Chain). Aberta em loop(); a chave fica so
    dentro do objeto, e o objeto so sabe assinar trade pra Pons. */
 let carteiraPons = null;
+let pons = null;          // a mesa (cotacao, compra, venda) — nasce junto com a carteira
+let ponsTesteFeito = false;
 
 async function loop() {
   // A VIDA CONTINUA DE ONDE PAROU — se houver de onde.
@@ -5613,6 +5761,13 @@ async function loop() {
       ? `— her wallet on ${carteiraPons.cadeia.nome} was born: ${carteiraPons.endereco}. It cannot send money out; it can only trade on Pons. —`
       : `— her wallet on ${carteiraPons.cadeia.nome}: ${carteiraPons.endereco} —`);
   } catch (e) { log(`carteira Pons falhou: ${e.message}`); }
+  if (carteiraPons) pons = criarPons(carteiraPons);
+  /* a versao da persona acompanha o historico no volume (o Michel pode trocar
+     a persona pela rota do servidor; senao a proxima reescrita dela sobrescreveria v1) */
+  try {
+    const ela = state.agents[ORDER[0]];
+    if (ela) ela.personaVersion = Math.max(ela.personaVersion || 1, mem2.contarVersoes ? mem2.contarVersoes(ROOT, ela.id) + 1 : ela.personaVersion || 1);
+  } catch { /* sem historico */ }
   /* E o que a corrente lembra e o disco esqueceu. Dispara e nao espera: o show
      nao pode ficar preso num RPC lento pra subir. */
   recuperarCiclosPerdidos().catch(() => {});

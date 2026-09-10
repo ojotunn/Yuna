@@ -22,6 +22,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { criarChat } from "./lib/chat-site.js";
+import * as mem from "./lib/memory.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -143,6 +144,25 @@ const servidor = http.createServer(async (req, res) => {
       if (filho && a && a.cenaFala && a.cenaFala.texto) CHAT.dela(a.cenaFala.texto, a.cenaFala.t);
     } catch { /* sem estado */ }
     return enviar(res, 200, { itens: CHAT.recentes(url.searchParams.get("desde")), publico: CHAT.publico(), agora: Date.now() });
+  }
+  /* TROCAR A PERSONA (o dono): versiona a atual em history/ e grava a nova no
+     volume; o motor le a persona a cada turno, entao vale sem restart. */
+  if (url.pathname === "/api/persona" && req.method === "POST") {
+    const tok = req.headers["x-admin-token"];
+    if (!process.env.ADMIN_TOKEN || tok !== process.env.ADMIN_TOKEN) return enviar(res, 401, { erro: "token invalido" });
+    let corpo = "";
+    for await (const p of req) { corpo += p; if (corpo.length > 200000) break; }
+    let d = {};
+    try { d = JSON.parse(corpo || "{}"); } catch { return enviar(res, 400, { erro: "corpo torto" }); }
+    const texto = String(d.texto || "").trim();
+    if (texto.length < 500) return enviar(res, 400, { erro: "persona curta demais" });
+    try {
+      let versao = mem.contarVersoes(ROOT, "yuna") + 1;
+      try { const c = JSON.parse(fs.readFileSync(process.env.CHECKPOINT_FILE || path.join(ROOT, "src", "data", "checkpoint-yuna.json"), "utf8")); versao = Math.max(versao, Number(c?.agents?.yuna?.personaVersion) || 1); } catch { /* sem checkpoint */ }
+      const nova = mem.rewritePersona(ROOT, "yuna", texto, String(d.porque || "the house rewrote it"), versao);
+      console.log(`[persona] trocada: v${versao} -> v${nova}`);
+      return enviar(res, 200, { ok: true, de: versao, para: nova, chars: texto.length });
+    } catch (e) { return enviar(res, 500, { erro: e.message }); }
   }
   /* LIMPAR O CHAT (dia do lancamento). So com o token do dono. */
   if (url.pathname === "/api/chat/limpar" && req.method === "POST") {

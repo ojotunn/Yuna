@@ -63,6 +63,11 @@ export function readPersona(root, id) {
 }
 
 // Reescrita: versiona a anterior antes de sobrescrever. Nunca perde histórico.
+/* quantas versoes ja estao no historico (a viva e a seguinte) */
+export function contarVersoes(root, id) {
+  const histDir = path.join(agentsDir(root), "history");
+  try { return fs.readdirSync(histDir).filter((f) => new RegExp(`^${id}\\.v\\d+\\.md$`).test(f)).length; } catch { return 0; }
+}
 export function rewritePersona(root, id, newText, why, version) {
   const histDir = path.join(agentsDir(root), "history");
   fs.mkdirSync(histDir, { recursive: true });

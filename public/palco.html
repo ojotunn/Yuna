@@ -31,8 +31,11 @@
   #topo .ca i { font-style: normal; color: #2a7; margin-left: 8px; }
   #topo .direita a.sobre { font: 12px ui-monospace, Menlo, Consolas, monospace; color: #444; text-decoration: none; border: 1px solid #c8c8c8; padding: 3px 8px; background: #fff; margin-right: 12px; }
   /* A MESA DELA: saldo, posicoes abertas, ultimas operacoes (em cima do chat) */
-  #mesa { border-bottom: 1px solid #ccc; background: #fafafa; max-height: 34%; overflow-y: auto; }
-  #mesa h2 { margin: 0; padding: 8px 12px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #666; background: linear-gradient(#f2f2f2, #e6e6e6); border-bottom: 1px solid #ccc; }
+  /* dobravel: fechado e uma linha so (o chat nunca some); clique abre */
+  #mesa { border-bottom: 1px solid #ccc; background: #fafafa; max-height: 30%; overflow-y: auto; flex: 0 0 auto; }
+  #mesa h2 { margin: 0; padding: 8px 12px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #666; background: linear-gradient(#f2f2f2, #e6e6e6); border-bottom: 1px solid #ccc; cursor: pointer; display: flex; justify-content: space-between; user-select: none; }
+  #mesa h2 span { text-transform: none; letter-spacing: 0; color: #444; font-weight: 500; }
+  #mesa.fechada #mesa-corpo { display: none; }
   #mesa-corpo { padding: 8px 12px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: #333; display: flex; flex-direction: column; gap: 4px; }
   #mesa-corpo .linha { display: flex; justify-content: space-between; gap: 8px; }
   #mesa-corpo .linha span:last-child { color: #666; white-space: nowrap; }
@@ -120,7 +123,7 @@
   <p>The chat on the right reaches her. She reads it every cycle and answers when something is worth answering.</p>
 </div></div>
 <div id="chat">
-  <div id="mesa"><h2>her desk</h2><div id="mesa-corpo"><span class="mudo">the desk is quiet</span></div></div>
+  <div id="mesa" class="fechada"><h2 id="mesa-cab">her desk<span id="mesa-resumo"></span></h2><div id="mesa-corpo"><span class="mudo">the desk is quiet</span></div></div>
   <h2>chat</h2>
   <div id="msgs"></div>
   <div id="aviso"></div>
@@ -460,6 +463,7 @@ function mesaDeOperacoes(st, a){
   const corpo = document.getElementById("mesa-corpo"); if (!corpo || !st) return;
   const esc = function(x){ return String(x == null ? "" : x).replace(/[&<>]/g, function(c){ return {"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]; }); };
   const usd = function(v){ return (v < 0 ? "-$" : "$") + Math.abs(Number(v) || 0).toFixed(2); };
+  const eth = function(v){ return (v < 0 ? "-" : "") + Math.abs(Number(v) || 0).toFixed(4) + " ETH"; };
   const L = [];
   if (a && a.enderecoPons) L.push('<div class="linha"><span>wallet</span><span>' + (a.saldoPons != null ? Number(a.saldoPons).toFixed(4) + " ETH" : "…") + "</span></div>");
   /* so a era da Pons: o historico da pump nao entra (Michel: "o desk inicia tudo" no lancamento) */
@@ -467,14 +471,17 @@ function mesaDeOperacoes(st, a){
   const abertas = (st.positions || []).filter(function(p){ return (!a || p.agent === a.id) && daPons(p); });
   L.push('<div class="titulo">open positions</div>');
   if (!abertas.length) L.push('<div class="mudo">none</div>');
-  abertas.slice(0, 6).forEach(function(p){ const pnl = Number(p.unrealized) || 0; L.push('<div class="linha"><span>' + esc(p.symbol || (p.market || "").slice(0, 8)) + " · " + usd(p.sizeUsd) + '</span><span class="' + (pnl >= 0 ? "verde" : "vermelho") + '">' + usd(pnl) + "</span></div>"); });
+  abertas.slice(0, 6).forEach(function(p){ const pnl = Number(p.unrealized) || 0; L.push('<div class="linha"><span>' + esc(p.symbol || (p.market || "").slice(0, 8)) + (p.proprio ? " ★" : "") + " · " + eth(p.ethIn) + '</span><span class="' + (pnl >= 0 ? "verde" : "vermelho") + '">' + eth(pnl) + "</span></div>"); });
   const fechadas = (st.closed || []).filter(daPons).slice(-5).reverse();
   L.push('<div class="titulo">last trades</div>');
   if (!fechadas.length) L.push('<div class="mudo">none yet</div>');
-  fechadas.forEach(function(p){ const pnl = Number(p.pnl != null ? p.pnl : p.realized) || 0; L.push('<div class="linha"><span>' + esc(p.symbol || (p.market || "").slice(0, 8)) + " · " + usd(p.sizeUsd) + '</span><span class="' + (pnl >= 0 ? "verde" : "vermelho") + '">' + usd(pnl) + "</span></div>"); });
+  fechadas.forEach(function(p){ const pnl = Number(p.pnlEth != null ? p.pnlEth : p.realized) || 0; L.push('<div class="linha"><span>' + esc(p.symbol || (p.market || "").slice(0, 8)) + " · " + eth(p.ethIn) + '</span><span class="' + (pnl >= 0 ? "verde" : "vermelho") + '">' + eth(pnl) + "</span></div>"); });
   corpo.innerHTML = L.join("");
+  const res = document.getElementById("mesa-resumo"); if (res) res.textContent = (a && a.saldoPons != null ? Number(a.saldoPons).toFixed(4) + " ETH" : "") + " · " + abertas.length + " open";
   if (a && a.enderecoPons) mostrarCarteira(a.enderecoPons, a.saldoPons);
 }
+document.getElementById("mesa-cab").onclick = function(){ const m = document.getElementById("mesa"); m.classList.toggle("fechada"); try { localStorage.setItem("mesa-aberta", m.classList.contains("fechada") ? "0" : "1"); } catch (e){} };
+try { if (localStorage.getItem("mesa-aberta") === "1") document.getElementById("mesa").classList.remove("fechada"); } catch (e){}
 document.getElementById("sobre-abrir").onclick = function(e){ e.preventDefault(); document.getElementById("sobre").classList.add("aberto"); };
 document.getElementById("sobre-fechar").onclick = function(){ document.getElementById("sobre").classList.remove("aberto"); };
 document.getElementById("sobre").onclick = function(e){ if (e.target === this) this.classList.remove("aberto"); };
