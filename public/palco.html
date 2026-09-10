@@ -341,8 +341,7 @@ function estacaoDoEstado(j){
   const ag = s.agents; const a = ag && (ag.yuna || ag[Object.keys(ag)[0]]); if (!a) return null;
   if (s.resting) return "cama";
   const m = a.cena && a.cena.movel;
-  if (m === "sofa") return "sofa";
-  if (m === "cama") return "cama";
+  if (m === "sofa" || m === "cama" || m === "centro" || m === "halter" || m === "pikachu") return m;   // os lugares do quarto novo
   return "mesa";
 }
 async function ouvirMotor(){
@@ -357,7 +356,8 @@ async function ouvirMotor(){
   }
   MOTOR.falhas = 0; MOTOR.ligado = true;
   const alvo = estacaoDoEstado(j);
-  if (alvo && alvo !== MOTOR.ultimoAlvo && alvo !== Y.estacao && Y.estacoes()[alvo]){ MOTOR.ultimoAlvo = alvo; Y.irPara(alvo, function(){ padraoDaEstacao(); }); }
+  if (alvo && alvo !== MOTOR.ultimoAlvo && alvo !== Y.estacao && Y.estacoes()[alvo]){ MOTOR.ultimoAlvo = alvo; Y.irPara(alvo, function(){ padraoDaEstacao(); posturaNoSofa(j); }); }
+  else posturaNoSofa(j);
   const ag = j.state.agents; const a = ag && (ag.yuna || ag[Object.keys(ag)[0]]);
   if (a && a.cenaFala && a.cenaFala.texto && a.cenaFala.t !== MOTOR.ultimaFala){ MOTOR.ultimaFala = a.cenaFala.t; falar(a.cenaFala.texto); }
   try { mesaDeOperacoes(j.state, a); } catch (e){ console.warn("mesa:", e); }
@@ -502,6 +502,18 @@ function gesticular(tipo){
   Y.fazer(clipe);
 }
 window.gesticular = gesticular; window.mostrarCarteira = mostrarCarteira; window.mesaDeOperacoes = mesaDeOperacoes;
+
+/* NO SOFA: deitada so quando e descanso de verdade (rest/dormindo); se ela foi
+   pro sofa pra escrever, pensar ou conversar, fica SENTADA (Michel: "agora ela
+   ta deitada no sofa" na noite do lancamento). */
+function posturaNoSofa(j){
+  const Y = window.YUNA; if (!Y || Y.estacao !== "sofa" || Y.estado !== "na estacao" || Y.pivot) return;
+  const s = j && j.state; const a = s && s.agents && (s.agents.yuna || s.agents[Object.keys(s.agents)[0]]); if (!a) return;
+  const descanso = !!s.resting || ((a.cena && a.cena.porque) === "rest");
+  const c = Y.clipeAtual || "";
+  if (descanso && c === "sit_idle" && Y.acoes && Y.acoes.subir_pernas) Y.sequencia([{clipe: "subir_pernas", fade: 0.5}, {clipe: "sofa_deitada", fade: 0.6}]);
+  else if (!descanso && c === "sofa_deitada" && Y.acoes && Y.acoes.sit_idle) Y.fazer("sit_idle");
+}
 
 /* balao de fala sobre a cabeca dela */
 const balao = document.getElementById("balao"); let balaoAte = 0;
