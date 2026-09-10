@@ -5879,12 +5879,12 @@ async function loop() {
       try {
         const page = await chrome.getAgentPage(ela.id);
         const shotPath = path.join(DATA, `shot-${ela.id}.jpg`);
-        await page.screenshot({ path: shotPath, type: "jpeg", quality: 55 });
+        await page.screenshot({ path: shotPath, type: "jpeg", quality: 45 });
         const url = page.url();
         ela.lastRead = { ...(ela.lastRead || {}), target: url && !/^about:/.test(url) ? url : (ela.lastRead?.target || ""), shot: Date.now(), kind: ela.lastRead?.kind || "web" };
       } catch { /* aba no meio de uma navegacao ou sessao caida: proxima volta */ }
       ocupado = false;
-    }, 4000);
+    }, 1000);   // 1 foto por segundo: "tempo real" sem expor a sessao (Michel, 10/09)
   }
 
   /* O NAVEGADOR SOBE JUNTO COM O MOTOR.

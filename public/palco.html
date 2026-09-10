@@ -382,7 +382,7 @@ function passear(){
   const E = Y.estacoes(); const opcoes = ESTACOES_PASSEIO.filter(function(n){ return E[n] && n !== Y.estacao; });
   if (opcoes.length) Y.irPara(opcoes[Math.floor(Math.random() * opcoes.length)], function(){ padraoDaEstacao(); });
 }
-function ligarMotor(){ ouvirMotor(); setInterval(ouvirMotor, 2500); setInterval(vigiarCaptura, 4000); }
+function ligarMotor(){ ouvirMotor(); setInterval(ouvirMotor, 2500); setInterval(vigiarCaptura, 1200); }
 /* A CAPTURA AO VIVO: a cada 4 s busca /api/shot; se a foto tem menos de 60 s e ela
    esta no PC, mostra (painel + monitor). Imagem, nunca sessao. */
 let capturaUrl = null;
@@ -391,7 +391,7 @@ async function vigiarCaptura(){
   try {
     const r = await fetch("/api/shot", {cache: "no-store"}); if (!r.ok){ navegadorNaTela(null, false); return; }
     const idade = Number(r.headers.get("x-shot-age") || 999);
-    if (idade > 60){ navegadorNaTela(null, false); return; }
+    if (idade > 20){ navegadorNaTela(null, false); return; }
     const b = await r.blob(); const u = URL.createObjectURL(b);
     navegadorNaTela(u, true);
     if (capturaUrl) URL.revokeObjectURL(capturaUrl); capturaUrl = u;
